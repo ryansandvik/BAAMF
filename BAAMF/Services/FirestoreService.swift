@@ -67,6 +67,15 @@ final class FirestoreService {
         let snapshot = try await usersRef().getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: Member.self) }
     }
+
+    // MARK: - Codable write helpers
+
+    /// Writes an Encodable value as a new document with an auto-generated ID.
+    /// Throws on encoding or network failure.
+    @discardableResult
+    func addDocument<T: Encodable>(to collection: CollectionReference, value: T) throws -> DocumentReference {
+        try collection.addDocument(from: value)
+    }
 }
 
 // MARK: - App-level errors
