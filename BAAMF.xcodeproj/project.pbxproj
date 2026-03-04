@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D236B77C2F58C87600C4C245 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = D236B77B2F58C87600C4C245 /* FirebaseAuth */; };
+		D236B77E2F58C87600C4C245 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D236B77D2F58C87600C4C245 /* FirebaseFirestore */; };
+		D236B7802F58C87600C4C245 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = D236B77F2F58C87600C4C245 /* FirebaseFunctions */; };
+		D236B7822F58C87600C4C245 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D236B7812F58C87600C4C245 /* FirebaseMessaging */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D236B7182F57B2A600C4C245 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,11 +34,33 @@
 		D236B70A2F57B2A500C4C245 /* BAAMF.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BAAMF.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D236B7172F57B2A600C4C245 /* BAAMFTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BAAMFTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D236B7212F57B2A600C4C245 /* BAAMFUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BAAMFUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D236B7832F58C9A400C4C245 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D236B73F2F58C3CD00C4C245 /* Exceptions for "BAAMF" folder in "BAAMFTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info.plist",
+			);
+			target = D236B7162F57B2A600C4C245 /* BAAMFTests */;
+		};
+		D236B7402F58C3CD00C4C245 /* Exceptions for "BAAMF" folder in "BAAMFUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info.plist",
+			);
+			target = D236B7202F57B2A600C4C245 /* BAAMFUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D236B70C2F57B2A500C4C245 /* BAAMF */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D236B73F2F58C3CD00C4C245 /* Exceptions for "BAAMF" folder in "BAAMFTests" target */,
+				D236B7402F58C3CD00C4C245 /* Exceptions for "BAAMF" folder in "BAAMFUITests" target */,
+			);
 			path = BAAMF;
 			sourceTree = "<group>";
 		};
@@ -52,6 +81,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D236B7822F58C87600C4C245 /* FirebaseMessaging in Frameworks */,
+				D236B7802F58C87600C4C245 /* FirebaseFunctions in Frameworks */,
+				D236B77C2F58C87600C4C245 /* FirebaseAuth in Frameworks */,
+				D236B77E2F58C87600C4C245 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,6 +108,7 @@
 		D236B7012F57B2A500C4C245 = {
 			isa = PBXGroup;
 			children = (
+				D236B7832F58C9A400C4C245 /* Config.xcconfig */,
 				D236B70C2F57B2A500C4C245 /* BAAMF */,
 				D236B71A2F57B2A600C4C245 /* BAAMFTests */,
 				D236B7242F57B2A600C4C245 /* BAAMFUITests */,
@@ -112,6 +146,10 @@
 			);
 			name = BAAMF;
 			packageProductDependencies = (
+				D236B77B2F58C87600C4C245 /* FirebaseAuth */,
+				D236B77D2F58C87600C4C245 /* FirebaseFirestore */,
+				D236B77F2F58C87600C4C245 /* FirebaseFunctions */,
+				D236B7812F58C87600C4C245 /* FirebaseMessaging */,
 			);
 			productName = BAAMF;
 			productReference = D236B70A2F57B2A500C4C245 /* BAAMF.app */;
@@ -195,6 +233,9 @@
 			);
 			mainGroup = D236B7012F57B2A500C4C245;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D236B70B2F57B2A500C4C245 /* Products */;
 			projectDirPath = "";
@@ -271,6 +312,7 @@
 /* Begin XCBuildConfiguration section */
 		D236B7292F57B2A600C4C245 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D236B7832F58C9A400C4C245 /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -335,6 +377,7 @@
 		};
 		D236B72A2F57B2A600C4C245 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D236B7832F58C9A400C4C245 /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -578,6 +621,40 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D236B77B2F58C87600C4C245 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		D236B77D2F58C87600C4C245 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		D236B77F2F58C87600C4C245 /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		D236B7812F58C87600C4C245 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D236B77A2F58C87600C4C245 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D236B7022F57B2A500C4C245 /* Project object */;
 }
