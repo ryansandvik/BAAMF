@@ -1,0 +1,343 @@
+# BAAMF App — Structural Plan
+
+## Overview
+
+iOS app for a private 12-member book club. Manages the full lifecycle of each month: host setup, book submissions, vetoes, two-round voting, scoring, and historical records. Distributed via TestFlight to fixed members.
+
+---
+
+## Tech Stack
+
+| Layer | Service | Purpose |
+|---|---|---|
+| Auth | Firebase Authentication | Email/password login; admin role assigned manually |
+| Database | Cloud Firestore | Real-time data sync for all app state |
+| Backend Logic | Firebase Cloud Functions (Node.js) | Vote aggregation, veto threshold, round advancement, notifications |
+| Push Notifications | Firebase Cloud Messaging (FCM) | Notify members when voting opens, scoring begins, etc. |
+| Book Metadata | Google Books API | Title, author, description, page count, cover image on submission |
+| Hosting (optional) | Firebase Hosting | Admin web panel if needed later |
+| Distribution | TestFlight | Deploy to 12 fixed members |
+
+**Why this stack:** Firestore's real-time listeners are ideal for synchronous in-person voting. Cloud Functions handle server-side logic (vote counting, veto thresholds) that must not run on untrusted clients. The whole stack lives in one Firebase project, keeping setup simple.
+
+---
+
+## Firestore Data Schema
+
+### `users/{userId}`
+```
+name:          String
+email:         String
+role:          "member" | "admin"          // host role is derived from schedule
+vetoCharges:   [{ usedAt: Timestamp }]     // max 2 entries; 12-month cooldown each
+fcmToken:      String
+```
+
+### `hostSchedule/{year}`
+```
+assignments:   { "1": userId, ..., "12": userId }
+swapRequests:  [{ id, requesterId, targetId, status: "pending"|"accepted"|"rejected", createdAt }]
+```
+
+### `months/{monthId}`  *(e.g. `"2026-03"`)*
+```
+year:              Int
+month:             Int
+hostId:            String
+submissionMode:    "open" | "theme" | "pick4"
+theme:             String?
+eventDate:         Timestamp?
+eventLocation:     String?
+eventNotes:        String?
+status:            "setup" | "submissions" | "vetoes" | "voting_r1" | "voting_r2" | "scoring" | "complete"
+winningBookId:     String?
+groupAvgScore:     Float?
+```
+
+### `months/{monthId}/books/{bookId}`
+```
+title:             String
+author:            String
+description:       String               // from Google Books, or overridden by submitter
+pitchOverride:     String?
+submitterId:       String
+googleBooksId:     String
+googleRating:      Float?
+pageCount:         Int?
+coverUrl:          String?
+isRemovedByVeto:   Bool                 // Type 1 veto (already read) — immediate removal
+vetoType2Voters:   [userId]             // who cast Type 2 vetos on this book
+vetoType2Penalty:  Bool                 // true if ≥25% threshold met → -2 net votes in R1
+netVotesR1:        Int                  // aggregate R1 vote count (inc. penalty); written by CF
+netVotesR2:        Int                  // aggregate R2 vote count; written by CF
+advancedToR2:      Bool
+```
+
+### `months/{monthId}/votes_r1/{userId}`
+```
+bookVotes:    [bookId, bookId]    // exactly 2 votes; one doc per user
+createdAt:    Timestamp
+```
+*Security rules: each user can only write/read their own doc. Aggregate counts live on the book doc (written by Cloud Function).*
+
+### `months/{monthId}/votes_r2/{userId}`
+```
+bookId:       String              // 1 vote
+createdAt:    Timestamp
+```
+
+### `months/{monthId}/scores/{userId}`
+```
+bookId:       String              // the winning book for that month
+score:        Float               // 1–7, half-points allowed
+updatedAt:    Timestamp
+```
+
+### `months/{monthId}/notifications/{notifId}`
+```
+type:         String              // "voting_open" | "scoring_open" | etc.
+sentAt:       Timestamp
+```
+
+---
+
+## Anonymous Voting Architecture
+
+The challenge: votes must be anonymous (members can't see each other's choices) but the live tally must be visible during in-person voting.
+
+**Solution:**
+- Each user writes their vote to `votes_r1/{userId}` — Firestore rules prevent any other user from reading it
+- A Cloud Function triggers on every vote write and updates the aggregate `netVotesR1` on the book document
+- Clients listen to the book documents for live tally updates — they see only the aggregate, never individual votes
+- The host/admin advances the round via a callable Cloud Function that reads all vote docs server-side
+
+This means **anonymity is enforced at the security rules level**, not just the UI level.
+
+---
+
+## Cloud Functions
+
+| Function | Trigger | What it does |
+|---|---|---|
+| `onR1VoteWritten` | Firestore write on `votes_r1/{userId}` | Recomputes `netVotesR1` on all books in the month |
+| `onR2VoteWritten` | Firestore write on `votes_r2/{userId}` | Recomputes `netVotesR2` on all books in the month |
+| `onVetoType2Written` | Firestore write on book's `vetoType2Voters` | Checks if ≥25% threshold met; sets `vetoType2Penalty` and applies -2 to `netVotesR1` |
+| `advanceToR2` | Callable (host/admin only) | Identifies top 2 (or 3) books from R1, sets `advancedToR2`, updates month status |
+| `closeVotingR2` | Callable (host/admin only) | Determines winner, sets `winningBookId`, updates month status to `scoring` |
+| `onMonthStatusChanged` | Firestore write on `months/{monthId}` | Sends FCM push notification to all members on status transitions |
+| `finalizeScoring` | Callable (host/admin only) | Computes `groupAvgScore`, updates month status to `complete` |
+
+---
+
+## Xcode Project Structure
+
+```
+BAAMF/
+├── App/
+│   ├── BAAMFApp.swift              // @main, Firebase setup, FCM registration
+│   └── AppRouter.swift             // NavigationStack root + tab management
+│
+├── Models/
+│   ├── User.swift
+│   ├── Month.swift
+│   ├── Book.swift
+│   ├── Vote.swift
+│   ├── Score.swift
+│   ├── HostSchedule.swift
+│   └── SwapRequest.swift
+│
+├── ViewModels/
+│   ├── AuthViewModel.swift
+│   ├── HomeViewModel.swift
+│   ├── HostSetupViewModel.swift
+│   ├── SubmissionsViewModel.swift
+│   ├── VetoViewModel.swift
+│   ├── VotingViewModel.swift       // handles both R1 and R2
+│   ├── ScoringViewModel.swift
+│   ├── HistoryViewModel.swift
+│   ├── ScheduleViewModel.swift
+│   └── AdminViewModel.swift
+│
+├── Views/
+│   ├── Auth/
+│   │   └── LoginView.swift
+│   ├── Home/
+│   │   └── HomeView.swift          // current month status + CTA
+│   ├── HostSetup/
+│   │   ├── HostSetupView.swift     // mode picker, event info
+│   │   └── ThemeInputView.swift
+│   ├── Submissions/
+│   │   ├── SubmissionsView.swift   // list of submitted books
+│   │   ├── BookSearchView.swift    // Google Books search
+│   │   └── BookSubmitView.swift    // confirm + pitch override
+│   ├── Vetoes/
+│   │   └── VetoView.swift          // shown before voting opens
+│   ├── Voting/
+│   │   ├── VotingR1View.swift
+│   │   └── VotingR2View.swift
+│   ├── Scoring/
+│   │   └── ScoringView.swift
+│   ├── History/
+│   │   ├── HistoryListView.swift
+│   │   └── HistoryDetailView.swift
+│   ├── Schedule/
+│   │   ├── ScheduleView.swift
+│   │   └── SwapRequestView.swift
+│   ├── Admin/
+│   │   └── AdminView.swift         // override controls, score entry on behalf
+│   └── Components/
+│       ├── BookCard.swift
+│       ├── VoteChip.swift
+│       ├── ScoreSlider.swift
+│       ├── StatusBadge.swift
+│       └── LoadingOverlay.swift
+│
+├── Services/
+│   ├── AuthService.swift           // Firebase Auth wrapper
+│   ├── FirestoreService.swift      // Firestore reads/writes
+│   ├── FunctionsService.swift      // Cloud Function callable wrappers
+│   ├── GoogleBooksService.swift    // Google Books API (URLSession)
+│   └── NotificationService.swift  // FCM token registration + handling
+│
+└── Utilities/
+    ├── Constants.swift             // collection names, API endpoints
+    ├── Extensions.swift
+    └── Validators.swift            // score range, veto charge logic
+```
+
+---
+
+## Navigation Structure
+
+```
+RootView
+├── (unauthenticated) → LoginView
+└── (authenticated) → TabView
+    ├── Tab: Home
+    │   └── HomeView (current month)
+    │       ├── HostSetupView       (host/admin only, during "setup" status)
+    │       ├── SubmissionsView
+    │       │   ├── BookSearchView
+    │       │   └── BookSubmitView
+    │       ├── VetoView
+    │       ├── VotingR1View
+    │       ├── VotingR2View
+    │       └── ScoringView
+    ├── Tab: History
+    │   └── HistoryListView
+    │       └── HistoryDetailView
+    ├── Tab: Schedule
+    │   └── ScheduleView
+    │       └── SwapRequestView
+    └── Tab: Admin  (admin only — hidden for regular members)
+        └── AdminView
+```
+
+Home tab content is driven by `month.status` — the view shown adapts as the month progresses.
+
+---
+
+## Firestore Security Rules (summary)
+
+```
+votes_r1/{userId}:    write: userId == request.auth.uid
+                      read:  userId == request.auth.uid   // no other member can read
+votes_r2/{userId}:    same pattern
+scores/{userId}:      write: userId == request.auth.uid OR user is admin
+                      read:  any authenticated member
+months/{monthId}:     status changes: host for that month OR admin only
+users/{userId}:       role field: admin only
+```
+
+---
+
+## Swift Package Dependencies
+
+Add via Xcode → File → Add Package Dependencies:
+
+| Package | URL | Used for |
+|---|---|---|
+| `firebase-ios-sdk` | https://github.com/firebase/firebase-ios-sdk | Auth, Firestore, Functions, FCM |
+
+That's the only external dependency. Google Books API uses native `URLSession` + `Codable`. No Alamofire needed.
+
+---
+
+## Firebase Project Setup Checklist
+
+- [ ] Create Firebase project at console.firebase.google.com
+- [ ] Add iOS app (bundle ID: match Xcode project)
+- [ ] Download `GoogleService-Info.plist` → add to Xcode project root
+- [ ] Enable **Firebase Authentication** → Email/Password provider
+- [ ] Enable **Cloud Firestore** → start in production mode
+- [ ] Enable **Cloud Functions** (requires Blaze pay-as-you-go plan)
+- [ ] Enable **Firebase Cloud Messaging**
+- [ ] Manually create user documents in Firestore for all 12 members
+- [ ] Set `role: "admin"` on your user document manually
+- [ ] Enable Apple Push Notifications entitlement in Xcode (for FCM)
+
+---
+
+## Google Books API Setup
+
+- [ ] Go to console.cloud.google.com → create project (or reuse Firebase project)
+- [ ] Enable **Books API**
+- [ ] Create an **API key** (restrict to iOS app by bundle ID for security)
+- [ ] Store key in `Constants.swift` (or preferably in a `.xcconfig` file excluded from git)
+
+**Search endpoint:** `GET https://www.googleapis.com/books/v1/volumes?q={query}&key={key}`
+
+---
+
+## Month Status Flow
+
+```
+setup → submissions → vetoes → voting_r1 → voting_r2 → scoring → complete
+```
+
+- `setup` → `submissions`: Host saves submission mode (automatic)
+- `submissions` → `vetoes`: Host/admin manually advances when submission window closes
+- `vetoes` → `voting_r1`: Host/admin opens voting (happens at the in-person meeting)
+- `voting_r1` → `voting_r2`: Host/admin calls `advanceToR2` Cloud Function
+- `voting_r2` → `scoring`: Host/admin calls `closeVotingR2` Cloud Function
+- `scoring` → `complete`: Host/admin calls `finalizeScoring` Cloud Function
+
+Each transition triggers a push notification to all members.
+
+---
+
+## Development Phases
+
+### Phase 1 — Foundation
+Firebase project setup, `GoogleService-Info.plist` in Xcode, Firebase Auth login flow, user session management, tab navigation shell, Firestore models + service layer.
+
+### Phase 2 — Host Setup & Submissions
+Host setup view (submission mode, theme, event info), Google Books API integration (search + auto-fill), book submission flow with pitch override, submission list view.
+
+### Phase 3 — Vetoes
+Type 1 veto (already read → immediate removal), Type 2 veto UI (flag book), Cloud Function for 25% threshold check and -2 penalty application.
+
+### Phase 4 — Voting
+Round 1 voting UI (2 votes, anonymous, live tally via Firestore listener), `advanceToR2` callable function + UI, Round 2 voting UI (1 vote), `closeVotingR2` callable.
+
+### Phase 5 — Scoring & History
+Scoring view (1–7 slider, real-time updates), admin "enter scores on behalf" flow, `finalizeScoring` function, history list and detail views.
+
+### Phase 6 — Schedule & Admin
+Host schedule view, swap request flow, admin override panel, admin score entry on behalf of members.
+
+### Phase 7 — Notifications & Polish
+FCM push notification integration, status-change notification triggers in Cloud Functions, UI polish, empty states, error handling.
+
+### Phase 8 — Testing & TestFlight
+Unit tests for veto threshold logic and vote counting, UI tests for critical flows, TestFlight build, distribute to all 12 members.
+
+---
+
+## Key Design Decisions to Revisit
+
+- **Veto cooldown tracking:** stored as an array of timestamps on the user doc. Before allowing a Type 2 veto, the app checks if either charge was used within the last 12 months. If both were used within 12 months, the button is disabled.
+- **Voting swappability:** as noted in context, voting method should be "easy to swap/configure." The `VotingService` is isolated so the distribution logic (2 votes in R1, 1 in R2) can be changed without touching views.
+- **Pick-4 mode:** in this mode, only the host submits (exactly 4 books). The submission UI should disable the submit button for non-hosts and show a message explaining why.
+- **Half-point scores:** the scoring slider should allow `.5` increments. Show the raw value (e.g. `4.5`) prominently — don't hide the precision.
+- **Admin "enter all scores":** admin can see all member names and enter a score for each. Useful if the group scores by show-of-hands at the meeting rather than individually in the app.
