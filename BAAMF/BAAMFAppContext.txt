@@ -1,0 +1,99 @@
+# BAAMF App — Context Document
+
+## Overview
+
+BAAMF is a private book club with 12 fixed members. Each member hosts one meeting per year on a rotating schedule set at the start of the calendar year. The app manages the full lifecycle of each month: submission, voting, scoring, and history.
+
+---
+
+## User Roles
+
+**Member** — standard access. Can submit books, vote, score, and veto.
+
+**Administrator** — superuser. Has all Member privileges plus all Host privileges (can set submission mode, open/close voting rounds, enter scores on behalf of all members, and force host schedule changes). Assigned manually in Firebase (or equivalent auth system).
+
+**Host** — the member whose month it is. Can set submission mode, post event info, and open/close voting rounds. Every member is a host once per year by default.
+
+---
+
+## Host Schedule
+
+- Set once at the start of the calendar year, one member per month
+- Any member can request a swap with another member at any time during the year
+- Both parties should consent to a swap, but an Administrator can force one
+- A member can end up hosting more than once in a year (e.g. if a member needs to give up their month, they can pass it to a willing member, who then hosts twice)
+
+---
+
+## Monthly Lifecycle
+
+### 1. Host Setup (~6 weeks before the meeting)
+The host selects a submission mode and optionally posts event info (date, location, etc).
+
+**Submission Modes:**
+- **Open** — any member may submit one book
+- **Theme** — host defines a theme; any member may submit one book fitting that theme
+- **Host Selection (Pick-4)** — host submits exactly 4 books; no other members may submit
+
+Submission is optional in Open and Theme modes — members only submit if they're passionate about a book.
+
+---
+
+### 2. Submissions
+- Members submit a book by searching/entering title + author
+- App auto-fetches from Goodreads: description, rating, page count
+- Submitter can override the description with their own pitch to the club
+- Each member may submit at most 1 book (except host in Pick-4, who submits exactly 4)
+
+---
+
+### 3. Vetoes (before voting begins)
+
+**Type 1 — Already Read:**
+- Any member can veto a book they've already read
+- Book is immediately removed from the pool
+- No charge or cooldown consumed
+
+**Type 2 — Don't Want to Read:**
+- Each member has **2 charges**, each with a **12-month cooldown per use**
+- If at least **25% of voting members** also cast this veto on the same book, the book stays but starts with **-2 votes** (requires 4 votes in round 1 to reach a net total of 2)
+- If the 25% threshold is not met, the book stays with no penalty
+
+---
+
+### 4. Voting — Round 1
+- Happens **in-person at the meeting**, synchronously
+- **Anonymous**
+- Each member gets **2 votes** to distribute across eligible books
+- Host (or Administrator) manually advances to Round 2
+
+---
+
+### 5. Voting — Round 2
+- Top 2 books from Round 1 advance; top 3 advance only in case of a tie for 2nd place
+- Always at least 2 books, even if one book dominated Round 1
+- **Anonymous**
+- Each member gets **1 vote**
+- Winning book is selected for the club to read
+
+---
+
+### 6. The Meeting & Scoring
+- Scoring opens at the meeting start time
+- Members discuss the book, then enter scores individually — or an Administrator can enter all scores on behalf of the group
+- Scores are on a **1–7 scale**; half-points allowed (e.g. 3.5), though discouraged
+- Members can update their score any time until the host or Administrator closes scoring
+- All individual scores are visible to all members (not anonymous)
+
+---
+
+## Historical Records
+All past books are visible with: group average score, each member's individual score, Goodreads data, and submission info.
+
+---
+
+## Tech Notes
+- **Platform:** iOS only
+- **Auth:** Firebase (or similar); Administrator role assigned manually
+- **Goodreads integration:** auto-fetch on book submission (description, rating, page count)
+- **Voting method:** should be easy to swap/configure
