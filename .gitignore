@@ -34,6 +34,7 @@ xcuserdata/
 ._*
 .Spotlight-V100
 .Trashes
+.fuse_hidden*
 
 # --- Swift Package Manager ----------------------------------
 .build/
