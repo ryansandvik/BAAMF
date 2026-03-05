@@ -56,6 +56,41 @@ final class HostSetupViewModel: ObservableObject {
         isSaving = false
     }
 
+    // MARK: - Host/admin: update event details only (no status change)
+    /// Called from EditMonthDetailsView — updates date/location/notes/theme
+    /// without touching the month's status.
+    func saveEventDetails(monthId: String) async {
+        isSaving = true
+        errorMessage = nil
+
+        var data: [String: Any] = [:]
+
+        if submissionMode == .theme {
+            let trimmed = theme.trimmingCharacters(in: .whitespaces)
+            data["theme"] = trimmed.isEmpty ? FieldValue.delete() : trimmed
+        }
+
+        if hasEventDate {
+            data["eventDate"] = Timestamp(date: eventDate)
+        } else {
+            data["eventDate"] = FieldValue.delete()
+        }
+
+        let loc = eventLocation.trimmingCharacters(in: .whitespaces)
+        data["eventLocation"] = loc.isEmpty ? FieldValue.delete() : loc
+
+        let notes = eventNotes.trimmingCharacters(in: .whitespaces)
+        data["eventNotes"] = notes.isEmpty ? FieldValue.delete() : notes
+
+        do {
+            try await db.monthRef(monthId: monthId).updateData(data)
+            savedSuccessfully = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
+    }
+
     // MARK: - Host/admin: save mode + event details → transition to submissions
 
     func saveSetup(monthId: String) async {

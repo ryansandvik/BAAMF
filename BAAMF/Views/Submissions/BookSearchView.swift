@@ -6,9 +6,12 @@ struct BookSearchView: View {
 
     let month: ClubMonth
     let onSubmitted: () -> Void
+    /// When non-nil, selecting a book swaps the existing submission rather than creating a new one.
+    var existingBookId: String? = nil
 
     @StateObject private var viewModel = BookSearchViewModel()
     @Environment(\.dismiss) private var dismiss
+    @State private var didSubmit = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,7 +75,11 @@ struct BookSearchView: View {
                                     BookSubmitView(
                                         book: item,
                                         month: month,
-                                        onSubmitted: onSubmitted
+                                        existingBookId: existingBookId,
+                                        onSubmitted: {
+                                            onSubmitted()
+                                            didSubmit = true
+                                        }
                                     )
                                 } label: {
                                     SearchResultRow(item: item)
@@ -86,8 +93,11 @@ struct BookSearchView: View {
                 }
             }
         }
-        .navigationTitle("Search Books")
+        .navigationTitle(existingBookId != nil ? "Swap Book" : "Search Books")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: didSubmit) { _, submitted in
+            if submitted { dismiss() }
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Search") { viewModel.search() }

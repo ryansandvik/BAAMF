@@ -7,6 +7,7 @@ struct HomeView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel = HomeViewModel()
     @State private var showCreateMonth = false
+    @State private var showEditDetails = false
 
     var body: some View {
         Group {
@@ -46,6 +47,11 @@ struct HomeView: View {
         .sheet(isPresented: $showCreateMonth) {
             CreateMonthSheet(allMembers: viewModel.allMembers)
         }
+        .sheet(isPresented: $showEditDetails) {
+            if let month = viewModel.currentMonth {
+                EditMonthDetailsView(month: month)
+            }
+        }
     }
 
     // MARK: - Month content (status-driven)
@@ -72,9 +78,15 @@ struct HomeView: View {
 
     // MARK: - Month header
 
+    private func canEditDetails(for month: ClubMonth) -> Bool {
+        guard month.status != .complete else { return false }
+        let isHost = viewModel.isCurrentUserHost(userId: authViewModel.currentUserId ?? "")
+        return isHost || authViewModel.isAdmin
+    }
+
     private func monthHeaderCard(_ month: ClubMonth) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(month.month.monthName + " \(month.year)")
                         .font(.title2.bold())
@@ -83,7 +95,18 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                StatusBadge(status: month.status)
+                VStack(alignment: .trailing, spacing: 8) {
+                    StatusBadge(status: month.status)
+                    if canEditDetails(for: month) {
+                        Button {
+                            showEditDetails = true
+                        } label: {
+                            Label("Edit Details", systemImage: "pencil")
+                                .font(.caption)
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                }
             }
 
             if let eventDate = month.eventDate {

@@ -1,15 +1,21 @@
 import SwiftUI
 
-/// Reusable card showing a submitted book's cover, title, author, submitter, and description.
+/// Reusable card showing a submitted book's cover, title, author, and description.
+/// `showSubmitter` should only be true for Pick-4 mode — Open/Theme submissions are anonymous.
 struct BookCard: View {
 
     let book: Book
     let submitterName: String
+    var showSubmitter: Bool = false
+    /// When true, a pencil indicator is shown so the user knows they can tap to edit.
+    var isOwned: Bool = false
+
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
 
-            // Header row: cover + title/author/submitter
+            // Header row: cover + title/author/submitter + owned indicator
             HStack(alignment: .top, spacing: 12) {
                 CoverImage(url: book.coverUrl, size: 64)
 
@@ -20,7 +26,21 @@ struct BookCard: View {
                     Text(book.author)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text("Submitted by \(submitterName)")
+                    if showSubmitter {
+                        Text("Submitted by \(submitterName)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    if isOwned {
+                        Label("Your submission", systemImage: "pencil")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                    }
+                }
+
+                if isOwned {
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -29,10 +49,23 @@ struct BookCard: View {
             // Pitch or description
             let displayText = book.displayDescription
             if !displayText.isEmpty {
-                Text(displayText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(isExpanded ? nil : 4)
+                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+
+                    if displayText.count > 150 {
+                        Button(isExpanded ? "Show less" : "Read more") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded.toggle()
+                            }
+                        }
+                        .font(.caption.bold())
+                        .foregroundStyle(.tint)
+                    }
+                }
             }
 
             // Metadata chips
@@ -48,6 +81,7 @@ struct BookCard: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))

@@ -7,6 +7,9 @@ struct BookSubmitView: View {
 
     let book: GoogleBooksItem
     let month: ClubMonth
+    /// When non-nil, the submit action replaces the book at this document ID instead
+    /// of creating a new submission.
+    var existingBookId: String? = nil
     let onSubmitted: () -> Void
 
     @StateObject private var viewModel = SubmissionsViewModel()
@@ -83,7 +86,7 @@ struct BookSubmitView: View {
                         .font(.footnote)
                 }
 
-                // Submit button
+                // Submit / Swap button
                 Button {
                     Task { await submit() }
                 } label: {
@@ -91,7 +94,7 @@ struct BookSubmitView: View {
                         if viewModel.isSubmitting {
                             ProgressView().tint(.white)
                         }
-                        Text("Submit Book")
+                        Text(existingBookId != nil ? "Swap Book" : "Submit Book")
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
@@ -104,7 +107,7 @@ struct BookSubmitView: View {
             }
             .padding()
         }
-        .navigationTitle("Submit Book")
+        .navigationTitle(existingBookId != nil ? "Swap Book" : "Submit Book")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: viewModel.submittedSuccessfully) { _, success in
             if success {
@@ -117,6 +120,14 @@ struct BookSubmitView: View {
     private func submit() async {
         guard let userId = authViewModel.currentUserId,
               let monthId = month.id else { return }
-        await viewModel.submitBook(book, pitch: pitch, monthId: monthId, submitterId: userId)
+
+        if let existingId = existingBookId {
+            await viewModel.swapBook(existingBookId: existingId,
+                                     monthId: monthId,
+                                     newBook: book,
+                                     pitch: pitch)
+        } else {
+            await viewModel.submitBook(book, pitch: pitch, monthId: monthId, submitterId: userId)
+        }
     }
 }

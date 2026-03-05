@@ -79,6 +79,62 @@ final class SubmissionsViewModel: ObservableObject {
         books.filter { !$0.isRemovedByVeto }
     }
 
+    // MARK: - Edit / Delete / Swap
+
+    /// Updates only the pitch on an existing book document.
+    func updateBookPitch(bookId: String, monthId: String, pitch: String) async {
+        let trimmed = pitch.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await db.bookRef(monthId: monthId, bookId: bookId)
+                .updateData(["pitchOverride": trimmed])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Deletes a book document. The real-time listener in SubmissionsView will
+    /// reflect the removal automatically.
+    func deleteBook(bookId: String, monthId: String) async {
+        do {
+            try await db.bookRef(monthId: monthId, bookId: bookId).delete()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Replaces the book metadata on an existing document (keeps the same doc ID,
+    /// submitter, and vote/veto fields). Used for the "Swap Book" flow.
+    func swapBook(existingBookId: String,
+                  monthId: String,
+                  newBook: GoogleBooksItem,
+                  pitch: String) async {
+        isSubmitting = true
+        errorMessage = nil
+
+        var data: [String: Any] = [
+            "title":         newBook.title,
+            "author":        newBook.author,
+            "description":   newBook.description,
+            "pitchOverride": pitch.trimmingCharacters(in: .whitespacesAndNewlines),
+            "googleBooksId": newBook.id
+        ]
+
+        if let rating = newBook.rating   { data["googleRating"] = rating }
+        else                             { data["googleRating"] = FieldValue.delete() }
+        if let pages = newBook.pageCount { data["pageCount"] = pages }
+        else                             { data["pageCount"] = FieldValue.delete() }
+        if let cover = newBook.coverUrl  { data["coverUrl"] = cover }
+        else                             { data["coverUrl"] = FieldValue.delete() }
+
+        do {
+            try await db.bookRef(monthId: monthId, bookId: existingBookId).updateData(data)
+            submittedSuccessfully = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSubmitting = false
+    }
+
     // MARK: - Submit
 
     func submitBook(_ googleBook: GoogleBooksItem,

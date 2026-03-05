@@ -28,10 +28,14 @@ final class GoogleBooksService {
             throw AppError.unknown("Could not build Google Books URL.")
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.setValue(Bundle.main.bundleIdentifier, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw AppError.unknown("Google Books API error (HTTP \(http.statusCode)).")
+            let body = String(data: data, encoding: .utf8) ?? "no response body"
+            throw AppError.unknown("HTTP \(http.statusCode): \(body)")
         }
 
         let decoded = try JSONDecoder().decode(GoogleBooksSearchResponse.self, from: data)

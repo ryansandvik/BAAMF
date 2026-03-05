@@ -30,7 +30,7 @@ final class BookSearchViewModel: ObservableObject {
                 hasSearched = true
             } catch {
                 guard !Task.isCancelled else { return }
-                errorMessage = "Search failed. Check your connection and try again."
+                errorMessage = error.localizedDescription
                 results = []
                 hasSearched = true
             }

@@ -10,6 +10,7 @@ struct SubmissionsView: View {
 
     @StateObject private var viewModel = SubmissionsViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @State private var editingBook: Book?
 
     var body: some View {
         Group {
@@ -28,6 +29,15 @@ struct SubmissionsView: View {
             }
         }
         .onDisappear { viewModel.stop() }
+        .sheet(item: $editingBook) { book in
+            BookEditView(
+                book: book,
+                month: month,
+                submitterName: memberName(for: book.submitterId),
+                onDeleted: {}
+            )
+            .environmentObject(authViewModel)
+        }
         .alert("Error", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
@@ -49,11 +59,7 @@ struct SubmissionsView: View {
                 LazyVStack(spacing: 12) {
                     modeHeader
                     ForEach(viewModel.eligibleBooks) { book in
-                        BookCard(
-                            book: book,
-                            submitterName: memberName(for: book.submitterId)
-                        )
-                        .padding(.horizontal)
+                        bookRow(for: book)
                     }
                 }
                 .padding(.vertical, 12)
@@ -117,11 +123,41 @@ struct SubmissionsView: View {
         if canSubmit {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink {
-                    BookSearchView(month: month, onSubmitted: {})
+                    BookSearchView(month: month, onSubmitted: {
+                        // Real-time listener handles refresh automatically
+                    })
                 } label: {
                     Label("Submit", systemImage: "plus")
                 }
             }
+        }
+    }
+
+    // MARK: - Book row
+
+    @ViewBuilder
+    private func bookRow(for book: Book) -> some View {
+        let isOwned = book.submitterId == authViewModel.currentUserId
+        let canEdit = isOwned && month.status == .submissions
+
+        if canEdit {
+            Button { editingBook = book } label: {
+                BookCard(
+                    book: book,
+                    submitterName: memberName(for: book.submitterId),
+                    showSubmitter: month.submissionMode == .pick4,
+                    isOwned: true
+                )
+                .padding(.horizontal)
+            }
+            .buttonStyle(.plain)
+        } else {
+            BookCard(
+                book: book,
+                submitterName: memberName(for: book.submitterId),
+                showSubmitter: month.submissionMode == .pick4
+            )
+            .padding(.horizontal)
         }
     }
 
