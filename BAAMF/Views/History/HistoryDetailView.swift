@@ -27,7 +27,7 @@ struct HistoryDetailView: View {
                 content
             }
         }
-        .navigationTitle("\(month.month.monthName) \(month.year)")
+        .navigationTitle(month.month.monthName + " " + String(month.year))
         .navigationBarTitleDisplayMode(.inline)
         .task { startListening() }
         .onDisappear { listener?.remove() }

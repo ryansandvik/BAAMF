@@ -5,12 +5,14 @@ struct LoginView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
 
+    @State private var isCreatingAccount = false
+    @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @State private var showResetSheet = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case email, password }
+    private enum Field { case name, email, password }
 
     var body: some View {
         NavigationStack {
@@ -18,6 +20,7 @@ struct LoginView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
 
                 VStack(spacing: 32) {
+
                     // Logo / title
                     VStack(spacing: 8) {
                         Image(systemName: "books.vertical.fill")
@@ -33,6 +36,19 @@ struct LoginView: View {
 
                     // Form
                     VStack(spacing: 0) {
+                        if isCreatingAccount {
+                            TextField("Full Name", text: $name)
+                                .textInputAutocapitalization(.words)
+                                .autocorrectionDisabled()
+                                .focused($focusedField, equals: .name)
+                                .submitLabel(.next)
+                                .onSubmit { focusedField = .email }
+                                .padding()
+                                .background(Color(.secondarySystemGroupedBackground))
+
+                            Divider().padding(.leading)
+                        }
+
                         TextField("Email", text: $email)
                             .textInputAutocapitalization(.never)
                             .keyboardType(.emailAddress)
@@ -48,13 +64,14 @@ struct LoginView: View {
                         SecureField("Password", text: $password)
                             .focused($focusedField, equals: .password)
                             .submitLabel(.go)
-                            .onSubmit { Task { await signIn() } }
+                            .onSubmit { Task { await primaryAction() } }
                             .padding()
                             .background(Color(.secondarySystemGroupedBackground))
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
                     .padding(.horizontal)
+                    .animation(.easeInOut(duration: 0.2), value: isCreatingAccount)
 
                     // Error
                     if let error = authViewModel.errorMessage {
@@ -65,15 +82,15 @@ struct LoginView: View {
                             .padding(.horizontal)
                     }
 
-                    // Sign in button
+                    // Primary action button
                     Button {
-                        Task { await signIn() }
+                        Task { await primaryAction() }
                     } label: {
                         HStack {
                             if authViewModel.isLoading {
                                 ProgressView().tint(.white)
                             }
-                            Text("Sign In")
+                            Text(isCreatingAccount ? "Create Account" : "Sign In")
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
@@ -82,15 +99,28 @@ struct LoginView: View {
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .disabled(authViewModel.isLoading || email.isEmpty || password.isEmpty)
+                    .disabled(isPrimaryButtonDisabled)
                     .padding(.horizontal)
 
-                    // Forgot password
-                    Button("Forgot password?") {
-                        showResetSheet = true
+                    // Secondary actions
+                    HStack(spacing: 4) {
+                        if isCreatingAccount {
+                            Text("Already have an account?")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Button("Sign In") { switchMode(to: false) }
+                                .font(.footnote.bold())
+                        } else {
+                            Button("Forgot password?") { showResetSheet = true }
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+
+                    if !isCreatingAccount {
+                        Button("Create an account") { switchMode(to: true) }
+                            .font(.footnote.bold())
+                    }
 
                     Spacer()
                 }
@@ -103,9 +133,39 @@ struct LoginView: View {
         }
     }
 
-    private func signIn() async {
+    // MARK: - Helpers
+
+    private var isPrimaryButtonDisabled: Bool {
+        guard !authViewModel.isLoading else { return true }
+        if isCreatingAccount {
+            return name.trimmingCharacters(in: .whitespaces).isEmpty
+                || email.isEmpty || password.isEmpty
+        }
+        return email.isEmpty || password.isEmpty
+    }
+
+    private func primaryAction() async {
         focusedField = nil
-        await authViewModel.signIn(email: email, password: password)
+        if isCreatingAccount {
+            await authViewModel.signUp(
+                name: name.trimmingCharacters(in: .whitespaces),
+                email: email,
+                password: password
+            )
+        } else {
+            await authViewModel.signIn(email: email, password: password)
+        }
+    }
+
+    private func switchMode(to creating: Bool) {
+        authViewModel.errorMessage = nil
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isCreatingAccount = creating
+        }
+        name = ""
+        email = ""
+        password = ""
+        focusedField = creating ? .name : .email
     }
 }
 

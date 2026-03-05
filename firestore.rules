@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function isMonthHost(monthId) {
+      return isAuth() &&
+        get(/databases/$(database)/documents/months/$(monthId)).data.hostId == request.auth.uid;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // Any member can read; only the owner or an admin can write.
+
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow write: if request.auth.uid == userId || isAdmin();
+    }
+
+    // ── Host Schedule ─────────────────────────────────────────────────────────
+    // Any member can read; only admins can write the schedule document.
+    // Swap requests live in a subcollection — any member can read/create;
+    // only the requester or an admin can update/delete.
+
+    match /hostSchedule/{year} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+
+      match /swapRequests/{requestId} {
+        allow read:          if isAuth();
+        allow create:        if isAuth();
+        allow update, delete: if isAuth() && (
+          request.auth.uid == resource.data.requesterId || isAdmin()
+        );
+      }
+    }
+
+    // ── Months ────────────────────────────────────────────────────────────────
+
+    match /months/{monthId} {
+      allow read:   if isAuth();
+      allow create: if isAdmin();
+      allow update: if isMonthHost(monthId) || isAdmin();
+      allow delete: if isAdmin();
+
+      // Books — any member can submit; submitter/host/admin can update or delete.
+      // Veto field updates (isRemovedByVeto, vetoType2Voters, vetoType2Penalty)
+      // are additionally open to any authenticated member.
+      match /books/{bookId} {
+        allow read:   if isAuth();
+        allow create: if isAuth();
+        allow update: if isAdmin()
+                      || isMonthHost(monthId)
+                      || resource.data.submitterId == request.auth.uid
+                      || (
+                           isAuth() &&
+                           request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['isRemovedByVeto', 'vetoType2Voters', 'vetoType2Penalty'])
+                         );
+        allow delete: if isAdmin()
+                      || isMonthHost(monthId)
+                      || resource.data.submitterId == request.auth.uid;
+      }
+
+      // Votes — each member can only read/write their own vote document.
+      match /votes_r1/{userId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+      match /votes_r2/{userId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+
+      // Scores — any member can read; members write their own; admin can write any.
+      match /scores/{userId} {
+        allow read:  if isAuth();
+        allow write: if request.auth.uid == userId || isAdmin();
+      }
+    }
+  }
+}

@@ -65,6 +65,7 @@ struct ClubMonth: Identifiable, Codable, Equatable {
     var submissionMode: SubmissionMode
     var theme: String?
     var eventDate: Date?
+    var eventEndDate: Date?
     var eventLocation: String?
     var eventNotes: String?
     var status: MonthStatus

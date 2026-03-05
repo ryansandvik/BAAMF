@@ -11,7 +11,8 @@ enum K {
         static let books        = "books"
         static let votesR1      = "votes_r1"
         static let votesR2      = "votes_r2"
-        static let scores       = "scores"
+        static let scores        = "scores"
+        static let swapRequests  = "swapRequests"
     }
 
     // MARK: - Google Books API

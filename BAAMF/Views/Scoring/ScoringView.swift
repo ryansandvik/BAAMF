@@ -17,6 +17,9 @@ struct ScoringView: View {
     @State private var selectedScore: Double = 4.0
     @State private var hasInitialized = false
 
+    // Admin: enter score on behalf of another member
+    @State private var adminTargetMember: Member?
+
     var body: some View {
         Group {
             if viewModel.isLoading {
@@ -42,6 +45,21 @@ struct ScoringView: View {
                 hasInitialized = true   // no existing score — keep default 4.0
             }
         }
+        .sheet(item: $adminTargetMember) { member in
+            AdminScoreSheet(
+                memberName: member.name,
+                existingScore: viewModel.myScore(userId: member.id ?? ""),
+                onSubmit: { score in
+                    Task {
+                        guard let monthId = month.id else { return }
+                        await viewModel.submitScore(score,
+                                                    monthId: monthId,
+                                                    bookId: month.selectedBookId ?? "",
+                                                    userId: member.id ?? "")
+                    }
+                }
+            )
+        }
         .alert("Error", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
@@ -60,6 +78,9 @@ struct ScoringView: View {
                 bookCard
                 scoreEntryCard
                 scoresListCard
+                if authViewModel.isAdmin {
+                    adminScoringCard
+                }
             }
             .padding()
         }
@@ -272,6 +293,58 @@ struct ScoringView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    // MARK: - Admin: enter scores on behalf
+
+    private var adminScoringCard: some View {
+        let unscored = allMembers.filter { !viewModel.hasScored(userId: $0.id ?? "") }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Enter Scores on Behalf")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(unscored.count) remaining")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            if unscored.isEmpty {
+                Divider().padding(.horizontal)
+                Text("All members have scored.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+            } else {
+                Divider().padding(.horizontal)
+                ForEach(unscored) { member in
+                    HStack {
+                        Text(member.name)
+                            .font(.body)
+                        Spacer()
+                        Button("Enter Score") {
+                            adminTargetMember = member
+                        }
+                        .font(.caption.bold())
+                        .foregroundStyle(.tint)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+
+                    if member.id != unscored.last?.id {
+                        Divider().padding(.horizontal)
+                    }
+                }
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     // MARK: - Actions
 
     private func submitScore() async {
@@ -281,5 +354,112 @@ struct ScoringView: View {
                                     monthId: monthId,
                                     bookId: bookId,
                                     userId: currentUserId)
+    }
+}
+
+// MARK: - Admin Score Sheet
+
+/// A self-contained sheet for an admin to enter a score on behalf of a member.
+private struct AdminScoreSheet: View {
+
+    let memberName: String
+    let existingScore: Double?
+    let onSubmit: (Double) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedScore: Double
+
+    init(memberName: String, existingScore: Double?, onSubmit: @escaping (Double) -> Void) {
+        self.memberName = memberName
+        self.existingScore = existingScore
+        self.onSubmit = onSubmit
+        _selectedScore = State(initialValue: existingScore ?? 4.0)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Text("Score for \(memberName)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+
+                Text(selectedScore.scoreDisplay)
+                    .font(.system(size: 72, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+                    .contentTransition(.numericText())
+                    .animation(.spring(duration: 0.25), value: selectedScore)
+
+                HStack(spacing: 8) {
+                    ForEach(1...7, id: \.self) { whole in
+                        let value = Double(whole)
+                        Button {
+                            selectedScore = value
+                        } label: {
+                            Text("\(whole)")
+                                .font(.body.bold())
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    selectedScore == value
+                                        ? Color.accentColor
+                                        : Color(.systemGray5)
+                                )
+                                .foregroundStyle(selectedScore == value ? .white : .primary)
+                                .clipShape(Circle())
+                        }
+                    }
+                }
+
+                HStack {
+                    Button {
+                        selectedScore = max(K.Scoring.minScore, selectedScore - K.Scoring.step)
+                    } label: {
+                        Text("−½")
+                            .font(.footnote.bold())
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Color(.systemGray5))
+                            .clipShape(Capsule())
+                    }
+                    .disabled(selectedScore <= K.Scoring.minScore)
+
+                    Spacer()
+
+                    Button {
+                        selectedScore = min(K.Scoring.maxScore, selectedScore + K.Scoring.step)
+                    } label: {
+                        Text("+½")
+                            .font(.footnote.bold())
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Color(.systemGray5))
+                            .clipShape(Capsule())
+                    }
+                    .disabled(selectedScore >= K.Scoring.maxScore)
+                }
+
+                Button {
+                    onSubmit(selectedScore)
+                    dismiss()
+                } label: {
+                    Text(existingScore != nil ? "Update Score" : "Submit Score")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 32)
+            .navigationTitle("Enter Score")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

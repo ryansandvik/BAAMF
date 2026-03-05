@@ -8,14 +8,15 @@ enum SwapRequestStatus: String, Codable {
 }
 
 /// A request to swap hosting months between two members.
-/// Stored as an array field on the `hostSchedule/{year}` document.
+/// Stored in the `hostSchedule/{year}/swapRequests/{requestId}` subcollection.
 struct SwapRequest: Identifiable, Codable, Equatable {
-    var id: String
+    @DocumentID var id: String?
+
     var requesterId: String
     var targetId: String
     /// The month the requester wants to give up.
     var requesterMonth: Int
-    /// The month the target member would give up (0 if requester just wants to offload their month).
+    /// The month the target member would give up (0 means offload only — no return swap).
     var targetMonth: Int
     var status: SwapRequestStatus
     var createdAt: Date

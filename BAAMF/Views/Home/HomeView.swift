@@ -1,20 +1,23 @@
 import SwiftUI
 import Combine
 
-/// The Home tab — adapts its content to whatever phase the current month is in.
+/// The Home tab — shows up to three month cards in a vertical feed:
+///   • Previous month (if still in an active phase — catches late-running months)
+///   • Current month (primary card)
+///   • Next month (once its document has been auto-created)
 struct HomeView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel = HomeViewModel()
     @State private var showCreateMonth = false
-    @State private var showManageMonth = false
+    @State private var managingMonth: ClubMonth? = nil
 
     var body: some View {
         Group {
             if viewModel.isLoading {
                 ProgressView("Loading…")
-            } else if let month = viewModel.currentMonth {
-                monthContent(month)
+            } else if viewModel.hasAnyMonth {
+                monthFeed
             } else {
                 noMonthView
             }
@@ -38,94 +41,124 @@ struct HomeView: View {
         .sheet(isPresented: $showCreateMonth) {
             CreateMonthSheet(allMembers: viewModel.allMembers)
         }
-        .sheet(isPresented: $showManageMonth) {
-            if let month = viewModel.currentMonth {
-                MonthManagementView(month: month)
-                    .environmentObject(authViewModel)
-            }
+        .sheet(item: $managingMonth) { month in
+            MonthManagementView(month: month)
+                .environmentObject(authViewModel)
         }
     }
 
-    // MARK: - Month content
+    // MARK: - Multi-card feed
 
-    @ViewBuilder
-    private func monthContent(_ month: ClubMonth) -> some View {
-        let needsOrangeHighlight = month.status == .vetoes
-            && viewModel.userNeedsReplacement(userId: authViewModel.currentUserId ?? "")
-
+    private var monthFeed: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            LazyVStack(spacing: 16) {
 
-                // ── Header ──────────────────────────────────────────────────────
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(month.month.monthName + " \(month.year)")
-                                .font(.title2.bold())
-                            Text("Host: \(viewModel.memberName(for: month.hostId))")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 8) {
-                            StatusBadge(status: month.status)
-                            // Gear is available to all users — phase controls inside are
-                            // gated to host/admin; everyone sees Sign Out.
-                            Button {
-                                showManageMonth = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-
-                    if let eventDate = month.eventDate {
-                        Label(eventDate.formatted(date: .abbreviated, time: .shortened),
-                              systemImage: "calendar")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let location = month.eventLocation, !location.isEmpty {
-                        Label(location, systemImage: "mappin.and.ellipse")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                // Previous month — only shown while still in an active phase
+                if let prev = viewModel.previousMonth {
+                    feedLabel("Previous Month — Still Active",
+                              icon: "exclamationmark.circle.fill",
+                              color: .orange)
+                    monthCard(prev, checkReplacement: false)
                 }
-                .padding()
 
-                Divider()
+                // Current month — primary card
+                if let curr = viewModel.currentMonth {
+                    monthCard(curr)
+                }
 
-                // ── Phase section ────────────────────────────────────────────────
-                phaseContent(month)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            }
-            .background(
-                needsOrangeHighlight
-                    ? Color.orange.opacity(0.08)
-                    : Color(.secondarySystemGroupedBackground)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                if needsOrangeHighlight {
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+                // Next month — appears once auto-created on .reading advance
+                if let next = viewModel.nextMonth {
+                    feedLabel("Up Next", icon: "calendar", color: .secondary)
+                    monthCard(next, checkReplacement: false)
                 }
             }
             .padding()
         }
     }
 
-    // MARK: - Phase content (inner, no background — combined card wraps it)
+    private func feedLabel(_ text: String, icon: String, color: Color) -> some View {
+        Label(text, systemImage: icon)
+            .font(.caption.bold())
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Month card
 
     @ViewBuilder
-    private func phaseContent(_ month: ClubMonth) -> some View {
+    private func monthCard(_ month: ClubMonth, checkReplacement: Bool = true) -> some View {
+        let needsOrangeHighlight = checkReplacement
+            && month.status == .vetoes
+            && viewModel.userNeedsReplacement(userId: authViewModel.currentUserId ?? "")
+
+        VStack(spacing: 0) {
+
+            // ── Header ──────────────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(month.month.monthName + " \(month.year)")
+                            .font(.title2.bold())
+                        Text("Host: \(viewModel.memberName(for: month.hostId))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 8) {
+                        StatusBadge(status: month.status)
+                        Button {
+                            managingMonth = month
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.body)
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                }
+
+                if let eventDate = month.eventDate {
+                    Label(eventDate.formatted(date: .abbreviated, time: .shortened),
+                          systemImage: "calendar")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let location = month.eventLocation, !location.isEmpty {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+
+            Divider()
+
+            // ── Phase section ────────────────────────────────────────────────
+            phaseContent(month, checkReplacement: checkReplacement)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .background(
+            needsOrangeHighlight
+                ? Color.orange.opacity(0.08)
+                : Color(.secondarySystemGroupedBackground)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            if needsOrangeHighlight {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+            }
+        }
+    }
+
+    // MARK: - Phase content
+
+    @ViewBuilder
+    private func phaseContent(_ month: ClubMonth, checkReplacement: Bool = true) -> some View {
         switch month.status {
         case .setup:       setupContent(month)
         case .submissions: submissionsContent(month)
-        case .vetoes:      vetoesContent(month)
+        case .vetoes:      vetoesContent(month, checkReplacement: checkReplacement)
         case .votingR1:    votingR1Content(month)
         case .votingR2:    votingR2Content(month)
         case .reading:     readingContent(month)
@@ -197,9 +230,9 @@ struct HomeView: View {
     // MARK: Vetoes
 
     @ViewBuilder
-    private func vetoesContent(_ month: ClubMonth) -> some View {
-        let needsReplacement = viewModel.userNeedsReplacement(
-            userId: authViewModel.currentUserId ?? "")
+    private func vetoesContent(_ month: ClubMonth, checkReplacement: Bool = true) -> some View {
+        let needsReplacement = checkReplacement
+            && viewModel.userNeedsReplacement(userId: authViewModel.currentUserId ?? "")
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -413,7 +446,7 @@ private struct CreateMonthSheet: View {
 
     @State private var selectedHostId: String = ""
 
-    private var currentYear: Int  { Calendar.current.component(.year,  from: Date()) }
+    private var currentYear:  Int { Calendar.current.component(.year,  from: Date()) }
     private var currentMonth: Int { Calendar.current.component(.month, from: Date()) }
 
     var body: some View {

@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 import FirebaseAuth
+import FirebaseMessaging
+internal import FirebaseFirestoreInternal
 
 /// Owns the auth lifecycle and the current member's Firestore profile.
 /// Injected as an `@EnvironmentObject` at the app root so all views can
@@ -42,6 +44,16 @@ final class AuthViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // Persist the FCM token whenever the SDK rotates it
+        NotificationCenter.default.publisher(for: .fcmTokenRefreshed)
+            .compactMap { $0.object as? String }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] token in
+                guard let uid = self?.currentUserId else { return }
+                NotificationService.shared.saveFCMToken(token, for: uid)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Auth actions
@@ -58,6 +70,9 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
+        if let uid = currentUserId {
+            NotificationService.shared.clearFCMToken(for: uid)
+        }
         errorMessage = nil
         try? authService.signOut()
     }
@@ -70,6 +85,25 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    func signUp(name: String, email: String, password: String) async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            let uid = try await authService.createUser(email: email, password: password)
+            let data: [String: Any] = [
+                "name": name,
+                "email": email,
+                "role": UserRole.member.rawValue,
+                "vetoCharges": []
+            ]
+            try await firestoreService.userRef(uid: uid).setData(data)
+            // authStateHandle fires automatically and loads the member profile
+        } catch {
+            errorMessage = friendlyAuthError(error)
+            isLoading = false
+        }
+    }
+
     // MARK: - Profile
 
     private func loadMemberProfile(uid: String) async {
@@ -79,6 +113,13 @@ final class AuthViewModel: ObservableObject {
             errorMessage = "Could not load your profile. Please try again."
         }
         isLoading = false
+
+        // Request notification permission and save any already-available FCM token.
+        // requestAuthorization() is a no-op after the first prompt.
+        NotificationService.shared.requestAuthorization()
+        if let token = Messaging.messaging().fcmToken {
+            NotificationService.shared.saveFCMToken(token, for: uid)
+        }
     }
 
     // MARK: - Error formatting
@@ -90,6 +131,12 @@ final class AuthViewModel: ObservableObject {
             return "Incorrect email or password."
         case .userNotFound:
             return "No account found for that email."
+        case .emailAlreadyInUse:
+            return "An account already exists for that email."
+        case .weakPassword:
+            return "Password must be at least 6 characters."
+        case .invalidEmail:
+            return "Please enter a valid email address."
         case .networkError:
             return "Network error. Check your connection and try again."
         default:

@@ -10,8 +10,13 @@ final class HostSetupViewModel: ObservableObject {
     @Published var submissionMode: SubmissionMode = .open
     @Published var theme = ""
     @Published var hasEventDate = false
-    @Published var eventDate = Calendar.current.date(
-        byAdding: .weekOfYear, value: 6, to: Date()) ?? Date()
+    @Published var eventDate: Date = {
+        Calendar.current.date(byAdding: .weekOfYear, value: 6, to: Date()) ?? Date()
+    }()
+    @Published var eventEndDate: Date = {
+        let start = Calendar.current.date(byAdding: .weekOfYear, value: 6, to: Date()) ?? Date()
+        return Calendar.current.date(byAdding: .hour, value: 2, to: start) ?? start
+    }()
     @Published var eventLocation = ""
     @Published var eventNotes = ""
 
@@ -26,12 +31,18 @@ final class HostSetupViewModel: ObservableObject {
     // MARK: - Pre-populate from existing month
 
     func load(from month: ClubMonth) {
-        submissionMode  = month.submissionMode
-        theme           = month.theme ?? ""
-        hasEventDate    = month.eventDate != nil
-        eventDate       = month.eventDate ?? eventDate
-        eventLocation   = month.eventLocation ?? ""
-        eventNotes      = month.eventNotes ?? ""
+        submissionMode = month.submissionMode
+        theme          = month.theme ?? ""
+        hasEventDate   = month.eventDate != nil
+        if let start = month.eventDate {
+            eventDate    = start
+            // Use stored end date if available, otherwise default to 2h after start
+            eventEndDate = month.eventEndDate
+                ?? Calendar.current.date(byAdding: .hour, value: 2, to: start)
+                ?? start
+        }
+        eventLocation = month.eventLocation ?? ""
+        eventNotes    = month.eventNotes ?? ""
     }
 
     // MARK: - Admin: create a brand-new month document
@@ -57,8 +68,7 @@ final class HostSetupViewModel: ObservableObject {
     }
 
     // MARK: - Host/admin: update event details only (no status change)
-    /// Called from EditMonthDetailsView — updates date/location/notes/theme
-    /// without touching the month's status.
+
     func saveEventDetails(monthId: String) async {
         isSaving = true
         errorMessage = nil
@@ -71,9 +81,11 @@ final class HostSetupViewModel: ObservableObject {
         }
 
         if hasEventDate {
-            data["eventDate"] = Timestamp(date: eventDate)
+            data["eventDate"]    = Timestamp(date: eventDate)
+            data["eventEndDate"] = Timestamp(date: eventEndDate)
         } else {
-            data["eventDate"] = FieldValue.delete()
+            data["eventDate"]    = FieldValue.delete()
+            data["eventEndDate"] = FieldValue.delete()
         }
 
         let loc = eventLocation.trimmingCharacters(in: .whitespaces)
@@ -109,22 +121,18 @@ final class HostSetupViewModel: ObservableObject {
         }
 
         if hasEventDate {
-            data["eventDate"] = Timestamp(date: eventDate)
+            data["eventDate"]    = Timestamp(date: eventDate)
+            data["eventEndDate"] = Timestamp(date: eventEndDate)
         } else {
-            data["eventDate"] = FieldValue.delete()
+            data["eventDate"]    = FieldValue.delete()
+            data["eventEndDate"] = FieldValue.delete()
         }
 
-        if !eventLocation.trimmingCharacters(in: .whitespaces).isEmpty {
-            data["eventLocation"] = eventLocation.trimmingCharacters(in: .whitespaces)
-        } else {
-            data["eventLocation"] = FieldValue.delete()
-        }
+        let loc = eventLocation.trimmingCharacters(in: .whitespaces)
+        data["eventLocation"] = loc.isEmpty ? FieldValue.delete() : loc
 
-        if !eventNotes.trimmingCharacters(in: .whitespaces).isEmpty {
-            data["eventNotes"] = eventNotes.trimmingCharacters(in: .whitespaces)
-        } else {
-            data["eventNotes"] = FieldValue.delete()
-        }
+        let notes = eventNotes.trimmingCharacters(in: .whitespaces)
+        data["eventNotes"] = notes.isEmpty ? FieldValue.delete() : notes
 
         do {
             try await db.monthRef(monthId: monthId).updateData(data)

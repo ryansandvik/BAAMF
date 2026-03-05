@@ -93,8 +93,12 @@ struct MonthManagementView: View {
                     Section {
                         Toggle("Add Event Date", isOn: $setupViewModel.hasEventDate)
                         if setupViewModel.hasEventDate {
-                            DatePicker("Date & Time",
+                            DatePicker("Start",
                                        selection: $setupViewModel.eventDate,
+                                       displayedComponents: [.date, .hourAndMinute])
+                            DatePicker("End",
+                                       selection: $setupViewModel.eventEndDate,
+                                       in: setupViewModel.eventDate...,
                                        displayedComponents: [.date, .hourAndMinute])
                         }
                         TextField("Location (optional)", text: $setupViewModel.eventLocation)
@@ -382,6 +386,38 @@ struct MonthManagementView: View {
         }
 
         try await db.monthRef(monthId: monthId).updateData(update)
+
+        // Auto-create the next month's document if it doesn't exist yet.
+        // Failure is intentionally silent — it must not block the phase advance.
+        await autoCreateNextMonth()
+    }
+
+    /// Looks up the host for the next calendar month from the schedule and creates
+    /// a stub document (status: .setup) if one doesn't already exist.
+    private func autoCreateNextMonth() async {
+        let (nextYear, nextMonthNum): (Int, Int) = month.month == 12
+            ? (month.year + 1, 1)
+            : (month.year, month.month + 1)
+
+        let nextMonthId = ClubMonth.monthId(year: nextYear, month: nextMonthNum)
+
+        // Skip if the document already exists
+        guard let snap = try? await db.monthRef(monthId: nextMonthId).getDocument(),
+              !snap.exists else { return }
+
+        // Pull the assigned host from the schedule (empty string if unassigned)
+        let scheduleSnap = try? await db.hostScheduleRef(year: nextYear).getDocument()
+        let schedule     = try? scheduleSnap?.data(as: HostSchedule.self)
+        let nextHostId   = schedule?.assignments[String(nextMonthNum)] ?? ""
+
+        let data: [String: Any] = [
+            "year":           nextYear,
+            "month":          nextMonthNum,
+            "hostId":         nextHostId,
+            "submissionMode": SubmissionMode.open.rawValue,
+            "status":         MonthStatus.setup.rawValue
+        ]
+        try? await db.monthRef(monthId: nextMonthId).setData(data)
     }
 
     // MARK: - Backward transitions

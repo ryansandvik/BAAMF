@@ -70,7 +70,7 @@ struct HistoryListView: View {
 
             // Text info
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(month.month.monthName) \(month.year)")
+                Text(month.month.monthName + " " + String(month.year))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 

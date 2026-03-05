@@ -53,6 +53,14 @@ final class FirestoreService {
         monthRef(monthId: monthId).collection(K.Firestore.scores)
     }
 
+    func swapRequestsRef(year: Int) -> CollectionReference {
+        hostScheduleRef(year: year).collection(K.Firestore.swapRequests)
+    }
+
+    func swapRequestRef(year: Int, requestId: String) -> DocumentReference {
+        swapRequestsRef(year: year).document(requestId)
+    }
+
     // MARK: - Common one-shot reads
 
     func fetchMember(uid: String) async throws -> Member {

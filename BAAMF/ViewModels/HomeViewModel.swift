@@ -2,42 +2,64 @@ import Foundation
 import Combine
 import FirebaseFirestore
 
-/// Drives the Home tab. Listens in real-time to the current month document
-/// and its books subcollection. This ViewModel is the source of truth for
-/// whatever phase of the monthly lifecycle the club is in.
+/// Drives the Home tab.
+///
+/// Listens in real-time to three Firestore month documents simultaneously:
+///   • **previousMonth** — shown if it still has an active (non-complete) phase,
+///     so a month that ran late doesn't silently disappear on the 1st.
+///   • **currentMonth** — the primary card; always shown when it exists.
+///   • **nextMonth** — shown once its document has been created (triggered
+///     automatically when the current month advances to .reading).
+///
+/// Books are only subscribed to for the current month document since that is the
+/// only card that needs dynamic book data on the home screen.
 @MainActor
 final class HomeViewModel: ObservableObject {
 
+    @Published private(set) var previousMonth: ClubMonth?
     @Published private(set) var currentMonth: ClubMonth?
+    @Published private(set) var nextMonth: ClubMonth?
     @Published private(set) var books: [Book] = []
     @Published private(set) var allMembers: [Member] = []
     @Published var isLoading = true
     @Published var errorMessage: String?
 
     private let firestoreService = FirestoreService.shared
-    private var monthListener: ListenerRegistration?
+    private var previousMonthListener: ListenerRegistration?
+    private var currentMonthListener: ListenerRegistration?
+    private var nextMonthListener: ListenerRegistration?
     private var booksListener: ListenerRegistration?
 
     // MARK: - Lifecycle
 
     func start(currentUserId: String) {
-        let monthId = ClubMonth.currentMonthId()
         isLoading = true
-        startMonthListener(monthId: monthId)
+        let ids = Self.adjacentMonthIds()
+        startPreviousMonthListener(monthId: ids.previous)
+        startCurrentMonthListener(monthId: ids.current)
+        startNextMonthListener(monthId: ids.next)
         Task { await loadAllMembers() }
     }
 
     func stop() {
-        monthListener?.remove()
+        previousMonthListener?.remove()
+        currentMonthListener?.remove()
+        nextMonthListener?.remove()
         booksListener?.remove()
     }
 
     deinit {
-        monthListener?.remove()
+        previousMonthListener?.remove()
+        currentMonthListener?.remove()
+        nextMonthListener?.remove()
         booksListener?.remove()
     }
 
     // MARK: - Derived state helpers
+
+    var hasAnyMonth: Bool {
+        previousMonth != nil || currentMonth != nil || nextMonth != nil
+    }
 
     func isCurrentUserHost(userId: String) -> Bool {
         currentMonth?.hostId == userId
@@ -59,8 +81,22 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Private listeners
 
-    private func startMonthListener(monthId: String) {
-        monthListener = firestoreService.monthRef(monthId: monthId)
+    private func startPreviousMonthListener(monthId: String) {
+        previousMonthListener = firestoreService.monthRef(monthId: monthId)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let month = try? snapshot?.data(as: ClubMonth.self)
+                    // Only surface it if it's not yet complete — complete months
+                    // leave home when the calendar rolls over.
+                    self.previousMonth = (month?.status != .complete) ? month : nil
+                    if let month { Task { await CalendarService.shared.syncEvent(for: month) } }
+                }
+            }
+    }
+
+    private func startCurrentMonthListener(monthId: String) {
+        currentMonthListener = firestoreService.monthRef(monthId: monthId)
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -73,12 +109,28 @@ final class HomeViewModel: ObservableObject {
                     if self.currentMonth != nil {
                         self.startBooksListener(monthId: monthId)
                     }
+                    if let month = self.currentMonth {
+                        Task { await CalendarService.shared.syncEvent(for: month) }
+                    }
+                }
+            }
+    }
+
+    private func startNextMonthListener(monthId: String) {
+        nextMonthListener = firestoreService.monthRef(monthId: monthId)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.nextMonth = try? snapshot?.data(as: ClubMonth.self)
+                    if let month = self.nextMonth {
+                        Task { await CalendarService.shared.syncEvent(for: month) }
+                    }
                 }
             }
     }
 
     private func startBooksListener(monthId: String) {
-        guard booksListener == nil else { return }  // Don't double-subscribe
+        guard booksListener == nil else { return }   // Don't double-subscribe
         booksListener = firestoreService.booksRef(monthId: monthId)
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor [weak self] in
@@ -98,7 +150,7 @@ final class HomeViewModel: ObservableObject {
             allMembers = try await firestoreService.fetchAllMembers()
                 .sorted { $0.name < $1.name }
         } catch {
-            // Non-fatal — members list is supplemental
+            // Non-fatal — member names degrade gracefully to "Unknown"
         }
     }
 
@@ -112,24 +164,38 @@ final class HomeViewModel: ObservableObject {
 
     /// True when the current user had a book removed by a "Read It" veto
     /// and can still submit a replacement before the veto window closes.
-    ///
-    /// - Open/Theme: user's only submission was Read It'd and they have no eligible book.
-    /// - Pick-4: host had a book Read It'd and the eligible count is below 4.
     func userNeedsReplacement(userId: String) -> Bool {
         guard let month = currentMonth, month.status == .vetoes else { return false }
 
         let userBooks = books.filter { $0.submitterId == userId }
-        // Must have had at least one Read It (not Hard Pass threshold) removal
         let wasReadItVetoed = userBooks.contains { $0.isRemovedByVeto && !$0.vetoType2Penalty }
         guard wasReadItVetoed else { return false }
 
         switch month.submissionMode {
         case .open, .theme:
-            // User's submission was removed and they have no replacement yet
             return !userBooks.contains { !$0.isRemovedByVeto }
         case .pick4:
-            // Host had a book removed and can fill the slot back up to 4
             return eligibleBooks.count < 4
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Computes the Firestore document IDs for the previous, current, and next
+    /// calendar months, handling January ↔ December year boundaries.
+    static func adjacentMonthIds() -> (previous: String, current: String, next: String) {
+        let cal   = Calendar.current
+        let now   = Date()
+        let year  = cal.component(.year,  from: now)
+        let month = cal.component(.month, from: now)
+
+        let (prevYear, prevMonth) = month == 1  ? (year - 1, 12) : (year, month - 1)
+        let (nextYear, nextMonth) = month == 12 ? (year + 1, 1)  : (year, month + 1)
+
+        return (
+            ClubMonth.monthId(year: prevYear, month: prevMonth),
+            ClubMonth.monthId(year: year,     month: month),
+            ClubMonth.monthId(year: nextYear, month: nextMonth)
+        )
     }
 }
