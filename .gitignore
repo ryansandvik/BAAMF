@@ -5,7 +5,8 @@
 # --- Secrets (never commit) ---------------------------------
 Config.xcconfig
 GoogleService-Info.plist
-AuthKey_F6R5XRKQ3J.p8
+Production.p8
+Sandbox.p8
 
 # --- Xcode --------------------------------------------------
 *.xcworkspace/xcuserdata/
