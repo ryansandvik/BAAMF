@@ -40,6 +40,14 @@ extension Double {
     }
 }
 
+// MARK: - Notification names
+
+extension Notification.Name {
+    /// Posted by EditCompletedMonthViewModel after a successful score save,
+    /// so any listening VM (e.g. FavoriteBooksViewModel) can refresh.
+    static let scoresDidUpdate = Notification.Name("scoresDidUpdate")
+}
+
 // MARK: - View helpers
 
 extension View {

@@ -68,6 +68,7 @@ struct ClubMonth: Identifiable, Codable, Equatable {
     var eventEndDate: Date?
     var eventLocation: String?
     var eventNotes: String?
+    var isHistorical: Bool?
     var status: MonthStatus
     var winningBookId: String?
     var groupAvgScore: Double?

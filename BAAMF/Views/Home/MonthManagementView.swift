@@ -21,6 +21,9 @@ struct MonthManagementView: View {
     @State private var isSavingDetails = false
     @State private var detailsSavedFeedback = false
 
+    // Unsaved-changes guard
+    @State private var showUnsavedChangesConfirm = false
+
     private let db = FirestoreService.shared
     private let allPhases = MonthStatus.allCases
 
@@ -147,11 +150,34 @@ struct MonthManagementView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        if isHostOrAdmin && setupViewModel.hasUnsavedChanges {
+                            showUnsavedChangesConfirm = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
             }
+            .interactiveDismissDisabled(isHostOrAdmin && setupViewModel.hasUnsavedChanges)
             .onAppear {
                 if isHostOrAdmin { setupViewModel.load(from: month) }
+            }
+            .confirmationDialog(
+                "Unsaved Changes",
+                isPresented: $showUnsavedChangesConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Save & Close") {
+                    Task {
+                        await saveDetails()
+                        dismiss()
+                    }
+                }
+                Button("Discard Changes", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) { }
+            } message: {
+                Text("You have unsaved event details. Would you like to save them before closing?")
             }
             // Phase transition confirmation
             .confirmationDialog(

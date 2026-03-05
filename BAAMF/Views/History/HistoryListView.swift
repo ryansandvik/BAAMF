@@ -4,6 +4,7 @@ import SwiftUI
 struct HistoryListView: View {
 
     @StateObject private var viewModel = HistoryViewModel()
+    @EnvironmentObject private var authViewModel: AuthViewModel
 
     var body: some View {
         Group {
@@ -36,14 +37,19 @@ struct HistoryListView: View {
 
     private var monthList: some View {
         List {
-            ForEach(viewModel.months) { month in
-                NavigationLink {
-                    HistoryDetailView(month: month, allMembers: viewModel.allMembers)
-                } label: {
-                    monthRow(month)
+            ForEach(viewModel.monthsByYear, id: \.year) { group in
+                Section(String(group.year)) {
+                    ForEach(group.months) { month in
+                        NavigationLink {
+                            HistoryDetailView(month: month, allMembers: viewModel.allMembers,
+                                             isAdmin: authViewModel.isAdmin)
+                        } label: {
+                            monthRow(month)
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color(.secondarySystemGroupedBackground))
+                    }
                 }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color(.secondarySystemGroupedBackground))
             }
         }
         .listStyle(.insetGrouped)
@@ -89,14 +95,26 @@ struct HistoryListView: View {
 
             Spacer()
 
-            // Group average
-            if let avg = month.groupAvgScore {
-                VStack(spacing: 2) {
-                    Image(systemName: "star.fill")
-                        .foregroundStyle(.yellow)
-                        .font(.footnote)
-                    Text(avg.scoreDisplay)
-                        .font(.footnote.bold())
+            // Right-side stack: historical badge + group average
+            VStack(alignment: .trailing, spacing: 6) {
+                if month.isHistorical == true {
+                    Text("Historical")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.6))
+                        .clipShape(Capsule())
+                }
+
+                if let avg = month.groupAvgScore {
+                    VStack(spacing: 2) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                            .font(.footnote)
+                        Text(avg.scoreDisplay)
+                            .font(.footnote.bold())
+                    }
                 }
             }
         }
@@ -106,4 +124,5 @@ struct HistoryListView: View {
 
 #Preview {
     NavigationStack { HistoryListView() }
+        .environmentObject(AuthViewModel())
 }

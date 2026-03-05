@@ -57,4 +57,13 @@ final class HistoryViewModel: ObservableObject {
     func memberName(for userId: String) -> String {
         allMembers.first { $0.id == userId }?.name ?? "Unknown"
     }
+
+    /// Months grouped and sorted newest-year-first. Each group's months are
+    /// already sorted newest-month-first by the listener sort above.
+    var monthsByYear: [(year: Int, months: [ClubMonth])] {
+        let years = Set(months.map { $0.year }).sorted(by: >)
+        return years.map { year in
+            (year, months.filter { $0.year == year })
+        }
+    }
 }

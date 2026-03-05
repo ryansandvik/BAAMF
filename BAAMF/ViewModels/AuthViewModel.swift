@@ -1,8 +1,8 @@
 import Foundation
 import Combine
 import FirebaseAuth
+import FirebaseFirestore
 import FirebaseMessaging
-internal import FirebaseFirestoreInternal
 
 /// Owns the auth lifecycle and the current member's Firestore profile.
 /// Injected as an `@EnvironmentObject` at the app root so all views can

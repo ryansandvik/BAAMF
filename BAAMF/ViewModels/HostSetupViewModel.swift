@@ -28,6 +28,27 @@ final class HostSetupViewModel: ObservableObject {
 
     private let db = FirestoreService.shared
 
+    // MARK: - Original values (for unsaved-change detection)
+
+    private var originalSubmissionMode: SubmissionMode = .open
+    private var originalTheme: String = ""
+    private var originalHasEventDate: Bool = false
+    private var originalEventDate: Date = Date()
+    private var originalEventEndDate: Date = Date()
+    private var originalEventLocation: String = ""
+    private var originalEventNotes: String = ""
+
+    /// True if any event-detail field differs from what was last loaded from Firestore.
+    var hasUnsavedChanges: Bool {
+        submissionMode  != originalSubmissionMode   ||
+        theme           != originalTheme            ||
+        hasEventDate    != originalHasEventDate     ||
+        (hasEventDate && eventDate    != originalEventDate)    ||
+        (hasEventDate && eventEndDate != originalEventEndDate) ||
+        eventLocation   != originalEventLocation    ||
+        eventNotes      != originalEventNotes
+    }
+
     // MARK: - Pre-populate from existing month
 
     func load(from month: ClubMonth) {
@@ -43,6 +64,15 @@ final class HostSetupViewModel: ObservableObject {
         }
         eventLocation = month.eventLocation ?? ""
         eventNotes    = month.eventNotes ?? ""
+
+        // Snapshot original values so hasUnsavedChanges starts false
+        originalSubmissionMode  = submissionMode
+        originalTheme           = theme
+        originalHasEventDate    = hasEventDate
+        originalEventDate       = eventDate
+        originalEventEndDate    = eventEndDate
+        originalEventLocation   = eventLocation
+        originalEventNotes      = eventNotes
     }
 
     // MARK: - Admin: create a brand-new month document

@@ -6,11 +6,13 @@ struct HistoryDetailView: View {
 
     let month: ClubMonth
     let allMembers: [Member]
+    var isAdmin: Bool = false
 
     @State private var scores: [BookScore] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var listener: ListenerRegistration?
+    @State private var showEditScores = false
 
     private let db = FirestoreService.shared
 
@@ -31,6 +33,20 @@ struct HistoryDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { startListening() }
         .onDisappear { listener?.remove() }
+        .toolbar {
+            if isAdmin {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showEditScores = true
+                    } label: {
+                        Label("Edit Scores", systemImage: "square.and.pencil")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showEditScores) {
+            EditCompletedMonthView(month: month)
+        }
         .alert("Error", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -94,6 +110,13 @@ struct HistoryDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 2)
+                }
+
+                if month.isHistorical == true {
+                    Label("Historical Entry", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
             }
 

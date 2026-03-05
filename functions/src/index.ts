@@ -31,6 +31,28 @@ interface NotificationContent {
   body: string;
 }
 
+/**
+ * Maps a status string to the notificationPrefs key that gates it.
+ * Returns null for statuses that have no notification.
+ */
+type PrefKey = "nominations" | "reading" | "scoring";
+
+function prefKeyForStatus(status: string): PrefKey | null {
+  switch (status) {
+    case "submissions":
+    case "vetoes":
+    case "voting_r1":
+    case "voting_r2":
+      return "nominations";
+    case "reading":
+      return "reading";
+    case "scoring":
+      return "scoring";
+    default:
+      return null;
+  }
+}
+
 /** Returns the notification to send for a given status transition, or null if none. */
 function notificationForTransition(
   prevStatus: string | undefined,
@@ -75,23 +97,25 @@ function notificationForTransition(
         title: "⭐ Time to Score",
         body: `Rate the book for ${monthLabel}!`,
       };
-    case "complete":
-      return {
-        title: "✅ Month Complete",
-        body: `${monthLabel} is wrapped up!`,
-      };
     default:
       return null;
   }
 }
 
-/** Fetches FCM tokens for all users that have one. */
-async function getAllFCMTokens(): Promise<string[]> {
+/**
+ * Fetches FCM tokens for all users that have a valid token AND have
+ * the given notification preference enabled (defaults to true when unset).
+ */
+async function getTokensForPref(prefKey: PrefKey | "swaps"): Promise<string[]> {
   const snapshot = await db.collection("users").get();
   const tokens: string[] = [];
   for (const doc of snapshot.docs) {
-    const token = doc.data().fcmToken;
-    if (typeof token === "string" && token.length > 0) {
+    const data = doc.data();
+    const token = data.fcmToken;
+    if (typeof token !== "string" || token.length === 0) continue;
+    // Preference defaults to true when not set
+    const prefs = (data.notificationPrefs ?? {}) as Record<string, boolean>;
+    if (prefs[prefKey] !== false) {
       tokens.push(token);
     }
   }
@@ -106,7 +130,6 @@ async function sendToTokens(
 ): Promise<void> {
   if (tokens.length === 0) return;
 
-  // FCM sendEachForMulticast supports up to 500 tokens per request
   for (let i = 0; i < tokens.length; i += 500) {
     const chunk = tokens.slice(i, i + 500);
     await messaging.sendEachForMulticast({
@@ -121,8 +144,6 @@ async function sendToTokens(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Function: Phase change notifications
-// Triggers on any write to months/{monthId} and sends a push notification
-// to all members when the status field advances to a new phase.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const onMonthStatusChange = firestore.onDocumentWritten(
@@ -135,11 +156,17 @@ export const onMonthStatusChange = firestore.onDocumentWritten(
     // Document was deleted — nothing to do
     if (!after) return;
 
+    // Historical back-fills should never trigger notifications
+    if (after.isHistorical === true) return;
+
     const prevStatus = before?.status as string | undefined;
     const newStatus = after.status as string;
 
     // No status change — skip
     if (prevStatus === newStatus) return;
+
+    const prefKey = prefKeyForStatus(newStatus);
+    if (!prefKey) return; // No notification defined for this status
 
     const monthLabel = formatMonthId(monthId);
     const selectedBookTitle = after.selectedBookTitle as string | undefined;
@@ -152,15 +179,14 @@ export const onMonthStatusChange = firestore.onDocumentWritten(
     );
     if (!content) return;
 
-    const tokens = await getAllFCMTokens();
+    // Only send to users who have this notification type enabled
+    const tokens = await getTokensForPref(prefKey);
     await sendToTokens(tokens, content.title, content.body);
   }
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Function: Swap request notifications
-// Triggers when a new swap request document is created and notifies the
-// member who is being asked to swap.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const onSwapRequest = firestore.onDocumentCreated(
@@ -180,8 +206,13 @@ export const onSwapRequest = firestore.onDocumentCreated(
       db.collection("users").doc(requesterId).get(),
     ]);
 
-    const targetToken = targetSnap.data()?.fcmToken as string | undefined;
+    const targetData = targetSnap.data();
+    const targetToken = targetData?.fcmToken as string | undefined;
     if (!targetToken) return;
+
+    // Respect the target user's swap notification preference (defaults true)
+    const targetPrefs = (targetData?.notificationPrefs ?? {}) as Record<string, boolean>;
+    if (targetPrefs["swaps"] === false) return;
 
     const requesterName =
       (requesterSnap.data()?.name as string | undefined) ?? "A member";

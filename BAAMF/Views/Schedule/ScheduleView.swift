@@ -229,16 +229,16 @@ struct ScheduleView: View {
 
         VStack(alignment: .leading, spacing: 8) {
             if isRequester {
-                let returnDesc = request.targetMonth == 0
+                let returnDesc = theirMonth == 0
                     ? "no return swap"
-                    : "their \(request.targetMonth.monthName)"
-                Text("You asked \(otherName) to swap — you give \(request.requesterMonth.monthName), \(returnDesc).")
+                    : "their \(theirMonth.monthName)"
+                Text("You asked \(otherName) to swap — you give \(myMonth.monthName), \(returnDesc).")
                     .font(.footnote)
             } else {
-                let returnDesc = request.targetMonth == 0
+                let returnDesc = myMonth == 0
                     ? "no return swap needed"
-                    : "they want your \(request.targetMonth.monthName) in return"
-                Text("\(otherName) wants to give you \(request.requesterMonth.monthName) (\(returnDesc)).")
+                    : "they want your \(myMonth.monthName) in return"
+                Text("\(otherName) wants to give you \(theirMonth.monthName) (\(returnDesc)).")
                     .font(.footnote)
             }
 

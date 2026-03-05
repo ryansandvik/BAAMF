@@ -1,51 +1,66 @@
 import Foundation
 import EventKit
-import UIKit
 
 /// Manages BAAMF event entries in the user's default iOS calendar.
 ///
-/// Each month's event identifier is persisted in `UserDefaults` so the same
-/// EKEvent can be found and updated when the host edits the date, location,
-/// or notes, and when the book title is chosen.
-final class CalendarService {
+/// Implemented as an `actor` so concurrent calls from multiple Firestore
+/// snapshot listeners never race and accidentally create duplicate events.
+///
+/// Events are tracked two ways:
+///   1. **In-memory cache** (`eventCache`) — authoritative for the current session.
+///      Phase changes, book selection, and location edits all update the same
+///      `EKEvent` object without ever hitting the EventKit store for a lookup.
+///   2. **UserDefaults** — persists the event identifier across app launches so
+///      the in-memory cache can be rebuilt the first time `syncEvent` runs after
+///      a cold start.
+actor CalendarService {
 
     static let shared = CalendarService()
 
     private let store = EKEventStore()
-    private let defaultDurationHours: Double = 2
+
+    /// Keyed by monthId ("2026-03"). Holds the live EKEvent for this session.
+    private var eventCache: [String: EKEvent] = [:]
 
     private init() {}
 
     // MARK: - Public API
 
-    /// Creates or updates a calendar event for the given month.
-    /// - Does nothing if `month.eventDate` is nil.
-    /// - Silently skips if the user denies calendar access.
-    /// - Must be called on any actor; EventKit access is handled internally.
+    /// Creates or updates the calendar event for the given month.
+    /// Silently does nothing if `eventDate` is nil or the user denies access.
     func syncEvent(for month: ClubMonth) async {
         guard let startDate = month.eventDate else {
-            // If the event date was removed, delete the existing calendar event
-            if let monthId = month.id { removeEvent(for: monthId) }
+            // Event date was removed — delete whatever we had
+            removeEvent(for: resolvedMonthId(for: month))
             return
         }
 
         guard await requestWriteAccess() else { return }
 
-        let monthId = month.id ?? ClubMonth.monthId(year: month.year, month: month.month)
-        let storageKey = calendarKey(for: monthId)
+        let monthId = resolvedMonthId(for: month)
 
-        // Find or create the EKEvent
-        let event: EKEvent
-        if let existingId = UserDefaults.standard.string(forKey: storageKey),
-           let existing = store.event(withIdentifier: existingId) {
-            event = existing
-        } else {
-            event = EKEvent(eventStore: store)
-            event.calendar = store.defaultCalendarForNewEvents
+        // ── Locate existing event ─────────────────────────────────────────────
+        // Priority: in-memory cache → UserDefaults identifier → create new
+        var event: EKEvent? = eventCache[monthId]
+
+        if event == nil {
+            if let storedId = UserDefaults.standard.string(forKey: calendarKey(for: monthId)) {
+                event = store.event(withIdentifier: storedId)
+            }
         }
 
-        // Build the title: use book title once chosen, month name until then
-        let monthName = "\(month.month.monthName) \(month.year)"
+        if event == nil {
+            let newEvent = EKEvent(eventStore: store)
+            newEvent.calendar = store.defaultCalendarForNewEvents
+            event = newEvent
+        }
+
+        guard let event else { return }
+
+        // ── Update all fields ─────────────────────────────────────────────────
+        let monthSymbols = Calendar.current.monthSymbols
+        let monthIndex = max(1, min(12, month.month)) - 1
+        let monthName = "\(monthSymbols[monthIndex]) \(month.year)"
         if let bookTitle = month.selectedBookTitle, !bookTitle.isEmpty {
             event.title = "BAAMF — \(bookTitle)"
         } else {
@@ -54,41 +69,45 @@ final class CalendarService {
 
         event.startDate = startDate
         event.endDate   = month.eventEndDate
-            ?? Calendar.current.date(
-                byAdding: .hour,
-                value: Int(defaultDurationHours),
-                to: startDate
-            ) ?? startDate
+            ?? Calendar.current.date(byAdding: .hour, value: 2, to: startDate)
+            ?? startDate
+        event.location  = month.eventLocation
+        event.notes     = month.eventNotes
 
-        event.location = month.eventLocation
-        event.notes    = month.eventNotes
-
+        // ── Persist ───────────────────────────────────────────────────────────
         do {
             try store.save(event, span: .thisEvent)
-            // Persist the identifier so future updates can find this event
-            UserDefaults.standard.set(event.eventIdentifier, forKey: storageKey)
+            eventCache[monthId] = event  // Keep alive for this session
+            UserDefaults.standard.set(event.eventIdentifier,
+                                      forKey: calendarKey(for: monthId))
         } catch {
-            print("CalendarService: failed to save event – \(error.localizedDescription)")
+            print("CalendarService: save failed – \(error.localizedDescription)")
         }
     }
 
-    /// Removes the calendar event for a month (e.g. when the event date is cleared).
+    /// Removes the calendar event for a month (called when the event date is cleared).
     func removeEvent(for monthId: String) {
-        let key = calendarKey(for: monthId)
-        guard let existingId = UserDefaults.standard.string(forKey: key),
-              let event = store.event(withIdentifier: existingId) else { return }
-        do {
-            try store.remove(event, span: .thisEvent)
-        } catch {
-            print("CalendarService: failed to remove event – \(error.localizedDescription)")
+        let existing: EKEvent? = eventCache[monthId] ?? {
+            guard let storedId = UserDefaults.standard.string(forKey: calendarKey(for: monthId))
+            else { return nil }
+            return store.event(withIdentifier: storedId)
+        }()
+
+        if let existing {
+            try? store.remove(existing, span: .thisEvent)
         }
-        UserDefaults.standard.removeObject(forKey: key)
+        eventCache.removeValue(forKey: monthId)
+        UserDefaults.standard.removeObject(forKey: calendarKey(for: monthId))
     }
 
     // MARK: - Private helpers
 
     private func calendarKey(for monthId: String) -> String {
         "baamf-calendarEvent-\(monthId)"
+    }
+
+    private func resolvedMonthId(for month: ClubMonth) -> String {
+        String(format: "%04d-%02d", month.year, month.month)
     }
 
     private func requestWriteAccess() async -> Bool {
