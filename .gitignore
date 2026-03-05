@@ -7,6 +7,7 @@ Config.xcconfig
 GoogleService-Info.plist
 Production.p8
 Sandbox.p8
+.firebaserc
 
 # --- Xcode --------------------------------------------------
 *.xcworkspace/xcuserdata/
