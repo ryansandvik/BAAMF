@@ -7,7 +7,7 @@ struct HomeView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel = HomeViewModel()
     @State private var showCreateMonth = false
-    @State private var showEditDetails = false
+    @State private var showManageMonth = false
 
     var body: some View {
         Group {
@@ -47,9 +47,9 @@ struct HomeView: View {
         .sheet(isPresented: $showCreateMonth) {
             CreateMonthSheet(allMembers: viewModel.allMembers)
         }
-        .sheet(isPresented: $showEditDetails) {
+        .sheet(isPresented: $showManageMonth) {
             if let month = viewModel.currentMonth {
-                EditMonthDetailsView(month: month)
+                MonthManagementView(month: month)
             }
         }
     }
@@ -78,7 +78,7 @@ struct HomeView: View {
 
     // MARK: - Month header
 
-    private func canEditDetails(for month: ClubMonth) -> Bool {
+    private func canManageMonth(for month: ClubMonth) -> Bool {
         guard month.status != .complete else { return false }
         let isHost = viewModel.isCurrentUserHost(userId: authViewModel.currentUserId ?? "")
         return isHost || authViewModel.isAdmin
@@ -97,12 +97,12 @@ struct HomeView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 8) {
                     StatusBadge(status: month.status)
-                    if canEditDetails(for: month) {
+                    if canManageMonth(for: month) {
                         Button {
-                            showEditDetails = true
+                            showManageMonth = true
                         } label: {
-                            Label("Edit Details", systemImage: "pencil")
-                                .font(.caption)
+                            Image(systemName: "gearshape")
+                                .font(.body)
                                 .foregroundStyle(.tint)
                         }
                     }
@@ -190,10 +190,60 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    @ViewBuilder
     private func vetoesSection(_ month: ClubMonth) -> some View {
-        PhaseCard(icon: "hand.raised", title: "Veto Window",
-                  description: "Review submitted books. Veto any you've read or don't want to read.")
-        // Phase 3: NavigationLink → VetoView
+        let needsReplacement = viewModel.userNeedsReplacement(
+            userId: authViewModel.currentUserId ?? "")
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: needsReplacement ? "exclamationmark.triangle.fill" : "hand.raised")
+                    .font(.title2)
+                    .foregroundStyle(needsReplacement ? Color.orange : Color.accentColor)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Veto Window").font(.headline)
+                    if needsReplacement {
+                        Text("Your book was removed — you can submit a replacement before voting opens.")
+                            .font(.footnote).foregroundStyle(.orange)
+                    } else {
+                        Text("Review submitted books. Veto any you've read or don't want to read.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if needsReplacement {
+                NavigationLink {
+                    BookSearchView(month: month, onSubmitted: {})
+                } label: {
+                    Text("Submit Replacement →")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            NavigationLink {
+                VetoView(month: month, allMembers: viewModel.allMembers)
+            } label: {
+                Text("Review & Veto →")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding()
+        .background(needsReplacement
+                    ? Color.orange.opacity(0.08)
+                    : Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            Group {
+                if needsReplacement {
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+                }
+            }
+        )
     }
 
     private func votingR1Section(_ month: ClubMonth) -> some View {

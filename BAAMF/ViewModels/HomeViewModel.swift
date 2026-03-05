@@ -47,7 +47,7 @@ final class HomeViewModel: ObservableObject {
         isAdmin || isCurrentUserHost(userId: userId)
     }
 
-    /// Books visible for the current round (excludes Type 1-vetoed books).
+    /// Books visible for the current round (excludes Read It–vetoed books).
     var eligibleBooks: [Book] {
         books.filter { !$0.isRemovedByVeto }
     }
@@ -106,5 +106,30 @@ final class HomeViewModel: ObservableObject {
 
     func memberName(for userId: String) -> String {
         allMembers.first { $0.id == userId }?.name ?? "Unknown"
+    }
+
+    // MARK: - Veto replacement eligibility
+
+    /// True when the current user had a book removed by a "Read It" veto
+    /// and can still submit a replacement before the veto window closes.
+    ///
+    /// - Open/Theme: user's only submission was Read It'd and they have no eligible book.
+    /// - Pick-4: host had a book Read It'd and the eligible count is below 4.
+    func userNeedsReplacement(userId: String) -> Bool {
+        guard let month = currentMonth, month.status == .vetoes else { return false }
+
+        let userBooks = books.filter { $0.submitterId == userId }
+        // Must have had at least one Read It (not Hard Pass threshold) removal
+        let wasReadItVetoed = userBooks.contains { $0.isRemovedByVeto && !$0.vetoType2Penalty }
+        guard wasReadItVetoed else { return false }
+
+        switch month.submissionMode {
+        case .open, .theme:
+            // User's submission was removed and they have no replacement yet
+            return !userBooks.contains { !$0.isRemovedByVeto }
+        case .pick4:
+            // Host had a book removed and can fill the slot back up to 4
+            return eligibleBooks.count < 4
+        }
     }
 }

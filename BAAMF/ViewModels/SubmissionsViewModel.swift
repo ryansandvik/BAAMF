@@ -30,6 +30,7 @@ final class SubmissionsViewModel: ObservableObject {
     @Published var isSubmitting = false
     @Published var errorMessage: String?
     @Published var submittedSuccessfully = false
+    @Published var closedSuccessfully = false
 
     private let db = FirestoreService.shared
     private var listener: ListenerRegistration?
@@ -77,6 +78,18 @@ final class SubmissionsViewModel: ObservableObject {
 
     var eligibleBooks: [Book] {
         books.filter { !$0.isRemovedByVeto }
+    }
+
+    // MARK: - Close submissions → advance to vetoes
+
+    func closeSubmissions(monthId: String) async {
+        do {
+            try await db.monthRef(monthId: monthId)
+                .updateData(["status": MonthStatus.vetoes.rawValue])
+            closedSuccessfully = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Edit / Delete / Swap

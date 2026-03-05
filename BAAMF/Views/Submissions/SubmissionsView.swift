@@ -3,6 +3,7 @@ import Combine
 
 /// Shows all submitted books for the current month.
 /// Members can submit their own book from here (if eligible).
+/// The host or admin can close submissions and open the veto window.
 struct SubmissionsView: View {
 
     let month: ClubMonth
@@ -116,10 +117,11 @@ struct SubmissionsView: View {
         )
     }
 
-    // MARK: - Submit toolbar button
+    // MARK: - Toolbar
 
     @ToolbarContentBuilder
     private var submitToolbarButton: some ToolbarContent {
+        // Submit button — shown to eligible members
         if canSubmit {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink {
@@ -131,6 +133,11 @@ struct SubmissionsView: View {
                 }
             }
         }
+    }
+
+    private var isHostOrAdmin: Bool {
+        let userId = authViewModel.currentUserId ?? ""
+        return month.isHost(userId: userId) || authViewModel.isAdmin
     }
 
     // MARK: - Book row
