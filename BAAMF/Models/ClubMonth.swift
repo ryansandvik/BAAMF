@@ -9,6 +9,7 @@ enum MonthStatus: String, Codable, CaseIterable {
     case vetoes
     case votingR1 = "voting_r1"
     case votingR2 = "voting_r2"
+    case reading
     case scoring
     case complete
 
@@ -19,6 +20,7 @@ enum MonthStatus: String, Codable, CaseIterable {
         case .vetoes:       return "Veto Window"
         case .votingR1:     return "Voting — Round 1"
         case .votingR2:     return "Voting — Round 2"
+        case .reading:      return "Reading"
         case .scoring:      return "Scoring"
         case .complete:     return "Complete"
         }
@@ -68,6 +70,12 @@ struct ClubMonth: Identifiable, Codable, Equatable {
     var status: MonthStatus
     var winningBookId: String?
     var groupAvgScore: Double?
+
+    // The book chosen at the end of Round 2. Written when the host advances to Reading.
+    var selectedBookId: String?
+    var selectedBookTitle: String?
+    var selectedBookAuthor: String?
+    var selectedBookCoverUrl: String?
 
     // MARK: Computed helpers
 

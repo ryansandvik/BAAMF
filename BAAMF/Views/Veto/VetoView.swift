@@ -20,8 +20,10 @@ struct VetoView: View {
 
     private var currentUserId: String { authViewModel.currentUserId ?? "" }
 
+    /// Sourced from the live ViewModel listener so charge counts update immediately
+    /// after a Hard Pass — the parent's `allMembers` is a one-time snapshot and would lag.
     private var currentMember: Member? {
-        allMembers.first { $0.id == currentUserId }
+        viewModel.members.first { $0.id == currentUserId }
     }
 
     private var availableCharges: Int {
@@ -95,7 +97,7 @@ struct VetoView: View {
             Button("Cancel", role: .cancel) { pendingHardPassBook = nil }
         } message: {
             if let book = pendingHardPassBook {
-                Text("You'll use 1 Hard Pass charge (\(availableCharges - 1) remaining after this). If \(threshold) members Hard Pass \"\(book.title)\", it's removed and all who Hard Passed lose 2 votes in Round 1.")
+                Text("You'll use 1 Hard Pass charge (\(availableCharges - 1) remaining after this). If \(threshold) members Hard Pass \"\(book.title)\", it stays in voting but is penalized \u{2212}2 points in Round 1.")
             }
         }
     }
@@ -288,7 +290,12 @@ struct VetoView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if alreadyPassed {
+            if book.vetoType2Penalty {
+                // Threshold met — book is penalized in Round 1
+                Label("Penalized", systemImage: "minus.circle.fill")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.red)
+            } else if alreadyPassed {
                 Label("Hard Pass cast", systemImage: "checkmark.circle.fill")
                     .font(.caption2.bold())
                     .foregroundStyle(.red)
@@ -330,10 +337,7 @@ struct VetoView: View {
                         Text(book.author)
                             .font(.caption)
                             .foregroundStyle(.tertiary)
-                        Label(
-                            book.vetoType2Penalty ? "Removed by Hard Pass (\(book.vetoType2Voters.count)/\(threshold))" : "Read It — removed",
-                            systemImage: book.vetoType2Penalty ? "hand.raised.slash" : "book.closed"
-                        )
+                        Label("Read It — removed", systemImage: "book.closed")
                         .font(.caption2)
                         .foregroundStyle(.red.opacity(0.7))
                     }

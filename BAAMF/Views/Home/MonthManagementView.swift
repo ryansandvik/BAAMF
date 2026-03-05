@@ -1,14 +1,15 @@
 import SwiftUI
 import FirebaseFirestore
 
-/// Single sheet for the host/admin to control all month management:
-/// phase transitions (forward and backward) and event detail editing.
-/// Opened via the gear icon on the Home tab month header card.
+/// Single sheet for controlling month management.
+/// • All users: view phase timeline, sign out.
+/// • Host / admin only: advance/revert phases, edit event details.
 struct MonthManagementView: View {
 
     let month: ClubMonth
 
     @StateObject private var setupViewModel = HostSetupViewModel()
+    @EnvironmentObject private var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
     // Phase transition state
@@ -22,6 +23,10 @@ struct MonthManagementView: View {
 
     private let db = FirestoreService.shared
     private let allPhases = MonthStatus.allCases
+
+    private var isHostOrAdmin: Bool {
+        month.isHost(userId: authViewModel.currentUserId ?? "") || authViewModel.isAdmin
+    }
 
     private var currentIndex: Int {
         allPhases.firstIndex(of: month.status) ?? 0
@@ -44,84 +49,86 @@ struct MonthManagementView: View {
         NavigationStack {
             List {
 
-                // MARK: Phase timeline
+                // MARK: Phase timeline (visible to all)
                 Section {
                     phaseTimeline
                 } header: {
                     Text("Current Phase")
                 }
 
-                // MARK: Phase controls
-                Section {
-                    if let next = nextPhase {
-                        Button {
-                            targetStatus = next
-                            showPhaseConfirm = true
-                        } label: {
-                            Label("Advance to \(next.displayName)",
-                                  systemImage: "arrow.right.circle.fill")
-                                .foregroundStyle(.tint)
-                                .fontWeight(.medium)
+                // MARK: Phase controls (host / admin only)
+                if isHostOrAdmin {
+                    Section {
+                        if let next = nextPhase {
+                            Button {
+                                targetStatus = next
+                                showPhaseConfirm = true
+                            } label: {
+                                Label("Advance to \(next.displayName)",
+                                      systemImage: "arrow.right.circle.fill")
+                                    .foregroundStyle(.tint)
+                                    .fontWeight(.medium)
+                            }
+                        } else {
+                            Label("Month is complete", systemImage: "checkmark.seal.fill")
+                                .foregroundStyle(.secondary)
                         }
-                    } else {
-                        Label("Month is complete", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.secondary)
-                    }
 
-                    if let prev = previousPhase {
-                        Button(role: .destructive) {
-                            targetStatus = prev
-                            showPhaseConfirm = true
-                        } label: {
-                            Label("Return to \(prev.displayName)",
-                                  systemImage: "arrow.left.circle")
-                        }
-                    }
-                } header: {
-                    Text("Phase Control")
-                } footer: {
-                    Text("Changes take effect immediately for all members.")
-                }
-
-                // MARK: Event details (inline editing)
-                Section {
-                    Toggle("Add Event Date", isOn: $setupViewModel.hasEventDate)
-                    if setupViewModel.hasEventDate {
-                        DatePicker("Date & Time",
-                                   selection: $setupViewModel.eventDate,
-                                   displayedComponents: [.date, .hourAndMinute])
-                    }
-                    TextField("Location (optional)", text: $setupViewModel.eventLocation)
-                    TextField("Notes (optional)",
-                              text: $setupViewModel.eventNotes,
-                              axis: .vertical)
-                        .lineLimit(3...6)
-
-                    if month.submissionMode == .theme {
-                        TextField("Theme", text: $setupViewModel.theme)
-                    }
-                } header: {
-                    Text("Event Details")
-                }
-
-                Section {
-                    Button {
-                        Task { await saveDetails() }
-                    } label: {
-                        HStack {
-                            Text(detailsSavedFeedback ? "Saved!" : "Save Event Details")
-                                .fontWeight(.medium)
-                            if isSavingDetails {
-                                Spacer()
-                                ProgressView()
-                            } else if detailsSavedFeedback {
-                                Spacer()
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
+                        if let prev = previousPhase {
+                            Button(role: .destructive) {
+                                targetStatus = prev
+                                showPhaseConfirm = true
+                            } label: {
+                                Label("Return to \(prev.displayName)",
+                                      systemImage: "arrow.left.circle")
                             }
                         }
+                    } header: {
+                        Text("Phase Control")
+                    } footer: {
+                        Text("Changes take effect immediately for all members.")
                     }
-                    .disabled(isSavingDetails)
+
+                    // MARK: Event details
+                    Section {
+                        Toggle("Add Event Date", isOn: $setupViewModel.hasEventDate)
+                        if setupViewModel.hasEventDate {
+                            DatePicker("Date & Time",
+                                       selection: $setupViewModel.eventDate,
+                                       displayedComponents: [.date, .hourAndMinute])
+                        }
+                        TextField("Location (optional)", text: $setupViewModel.eventLocation)
+                        TextField("Notes (optional)",
+                                  text: $setupViewModel.eventNotes,
+                                  axis: .vertical)
+                            .lineLimit(3...6)
+
+                        if month.submissionMode == .theme {
+                            TextField("Theme", text: $setupViewModel.theme)
+                        }
+                    } header: {
+                        Text("Event Details")
+                    }
+
+                    Section {
+                        Button {
+                            Task { await saveDetails() }
+                        } label: {
+                            HStack {
+                                Text(detailsSavedFeedback ? "Saved!" : "Save Event Details")
+                                    .fontWeight(.medium)
+                                if isSavingDetails {
+                                    Spacer()
+                                    ProgressView()
+                                } else if detailsSavedFeedback {
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                }
+                            }
+                        }
+                        .disabled(isSavingDetails)
+                    }
                 }
 
                 // MARK: Error
@@ -130,6 +137,7 @@ struct MonthManagementView: View {
                         Text(error).foregroundStyle(.red).font(.footnote)
                     }
                 }
+
             }
             .navigationTitle("Manage Month")
             .navigationBarTitleDisplayMode(.inline)
@@ -139,7 +147,7 @@ struct MonthManagementView: View {
                 }
             }
             .onAppear {
-                setupViewModel.load(from: month)
+                if isHostOrAdmin { setupViewModel.load(from: month) }
             }
             // Phase transition confirmation
             .confirmationDialog(
@@ -175,7 +183,6 @@ struct MonthManagementView: View {
                     let isCurrent = index == currentIndex
 
                     HStack(spacing: 0) {
-                        // Connector line (skip for first item)
                         if index > 0 {
                             Rectangle()
                                 .frame(width: 16, height: 2)
@@ -224,6 +231,7 @@ struct MonthManagementView: View {
         case .vetoes:       return "Vetoes"
         case .votingR1:     return "Vote R1"
         case .votingR2:     return "Vote R2"
+        case .reading:      return "Reading"
         case .scoring:      return "Scoring"
         case .complete:     return "Done"
         }
@@ -246,7 +254,18 @@ struct MonthManagementView: View {
     private var confirmMessage: String {
         guard let target = targetStatus else { return "" }
         if isGoingBackward {
-            return "Going back to \(target.displayName) will reopen that phase. Any actions members have taken in the current phase may be affected."
+            switch (month.status, target) {
+            case (.votingR1, .vetoes):
+                return "All Round 1 votes will be cleared. Members will need to vote again when the round reopens."
+            case (.votingR2, .votingR1):
+                return "All Round 2 votes will be cleared and books will need to be re-advanced to Round 2."
+            case (.reading, .votingR2):
+                return "The selected book will be cleared and Round 2 voting will reopen."
+            case (.vetoes, .submissions):
+                return "All vetoes will be cleared and submissions will reopen. Any Hard Pass charges spent this month will be refunded."
+            default:
+                return "Going back to \(target.displayName) will reopen that phase. Any actions members have taken in the current phase may be affected."
+            }
         }
         switch (month.status, target) {
         case (.submissions, .vetoes):
@@ -255,8 +274,10 @@ struct MonthManagementView: View {
             return "The veto window will close and Round 1 voting will open for all members."
         case (.votingR1, .votingR2):
             return "Round 1 voting will close. Only the top-ranked books will advance to Round 2."
-        case (.votingR2, .scoring):
-            return "Voting will close. The winning book will be announced and members can submit their scores."
+        case (.votingR2, .reading):
+            return "Round 2 voting will close. The book with the most votes becomes the pick for this month."
+        case (.reading, .scoring):
+            return "The reading period will end. Members can now score the book at your event."
         case (.scoring, .complete):
             return "This will mark the month as complete and archive it in History."
         default:
@@ -264,15 +285,35 @@ struct MonthManagementView: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Phase change routing
 
     private func changePhase() async {
         guard let target = targetStatus, let monthId = month.id else { return }
         isSavingPhase = true
         setupViewModel.errorMessage = nil
         do {
-            try await db.monthRef(monthId: monthId)
-                .updateData(["status": target.rawValue])
+            switch (month.status, target) {
+            // Special forward transitions
+            case (.votingR1, .votingR2):
+                try await advanceToR2(monthId: monthId)
+            case (.votingR2, .reading):
+                try await advanceToReading(monthId: monthId)
+            // Special backward transitions
+            case (.vetoes, .submissions):
+                try await revertToSubmissions(monthId: monthId)
+            case (.votingR1, .vetoes):
+                try await revertToVetoes(monthId: monthId)
+            case (.votingR2, .votingR1):
+                try await revertToVotingR1(monthId: monthId)
+            case (.reading, .votingR2):
+                try await revertToVotingR2(monthId: monthId)
+            case (.scoring, .complete):
+                try await finalizeScoring(monthId: monthId)
+            // All other transitions: simple status update
+            default:
+                try await db.monthRef(monthId: monthId)
+                    .updateData(["status": target.rawValue])
+            }
             dismiss()
         } catch {
             setupViewModel.errorMessage = error.localizedDescription
@@ -281,6 +322,162 @@ struct MonthManagementView: View {
         targetStatus = nil
     }
 
+    // MARK: - Forward transitions
+
+    /// Closes R1 and marks the top `K.Voting.r2AdvanceCount` books as advancedToR2.
+    private func advanceToR2(monthId: String) async throws {
+        let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
+
+        struct BookScore {
+            let ref: DocumentReference
+            let netVotes: Int
+        }
+
+        let scores: [BookScore] = booksSnap.documents.compactMap { doc in
+            let data = doc.data()
+            guard !(data["isRemovedByVeto"] as? Bool ?? false) else { return nil }
+            let rawVotes = (data["votingR1Voters"] as? [String] ?? []).count
+            let penalty  = (data["vetoType2Penalty"] as? Bool ?? false)
+                           ? K.Veto.type2PenaltyVotes : 0
+            return BookScore(ref: doc.reference, netVotes: rawVotes + penalty)
+        }.sorted { $0.netVotes > $1.netVotes }
+
+        let cutoffScore: Int = scores.count >= K.Voting.r2AdvanceCount
+            ? scores[K.Voting.r2AdvanceCount - 1].netVotes
+            : (scores.last?.netVotes ?? 0)
+
+        let batch = db.db.batch()
+        batch.updateData(["status": MonthStatus.votingR2.rawValue],
+                         forDocument: db.monthRef(monthId: monthId))
+        for score in scores where score.netVotes >= cutoffScore {
+            batch.updateData(["advancedToR2": true], forDocument: score.ref)
+        }
+        try await batch.commit()
+    }
+
+    /// Closes R2, determines the winner by R2 vote count, and writes book details
+    /// (including document ID) to the month document for use in the reading and scoring phases.
+    private func advanceToReading(monthId: String) async throws {
+        let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
+
+        // Find the R2 book with the most votes, preserving document ID for scoring
+        let winner = booksSnap.documents
+            .filter { ($0.data()["advancedToR2"] as? Bool) == true }
+            .map { doc -> (id: String, data: [String: Any], r2Count: Int) in
+                let data = doc.data()
+                let r2Count = (data["votingR2Voters"] as? [String] ?? []).count
+                return (doc.documentID, data, r2Count)
+            }
+            .sorted { $0.r2Count > $1.r2Count }
+            .first
+
+        var update: [String: Any] = ["status": MonthStatus.reading.rawValue]
+        if let winner = winner {
+            update["selectedBookId"]     = winner.id
+            update["selectedBookTitle"]  = winner.data["title"]  as? String ?? ""
+            update["selectedBookAuthor"] = winner.data["author"] as? String ?? ""
+            if let coverUrl = winner.data["coverUrl"] as? String {
+                update["selectedBookCoverUrl"] = coverUrl
+            }
+        }
+
+        try await db.monthRef(monthId: monthId).updateData(update)
+    }
+
+    // MARK: - Backward transitions
+
+    /// Reverts month from vetoes → submissions.
+    /// Clears all Hard Pass state on books and refunds charges used this month.
+    private func revertToSubmissions(monthId: String) async throws {
+        let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
+
+        var refundMap: [String: Int] = [:]
+        for doc in booksSnap.documents {
+            let voters = doc.data()["vetoType2Voters"] as? [String] ?? []
+            for userId in voters { refundMap[userId, default: 0] += 1 }
+        }
+
+        var memberCharges: [String: [[String: Any]]] = [:]
+        for userId in refundMap.keys {
+            let snap = try await db.userRef(uid: userId).getDocument()
+            memberCharges[userId] = snap.data()?["vetoCharges"] as? [[String: Any]] ?? []
+        }
+
+        let batch = db.db.batch()
+        batch.updateData(["status": MonthStatus.submissions.rawValue],
+                         forDocument: db.monthRef(monthId: monthId))
+
+        for doc in booksSnap.documents {
+            batch.updateData(["vetoType2Voters": [], "vetoType2Penalty": false],
+                             forDocument: doc.reference)
+        }
+
+        for (userId, count) in refundMap {
+            var charges = memberCharges[userId] ?? []
+            let removeCount = min(count, charges.count)
+            guard removeCount > 0 else { continue }
+            charges.removeLast(removeCount)
+            batch.updateData(["vetoCharges": charges], forDocument: db.userRef(uid: userId))
+        }
+
+        try await batch.commit()
+    }
+
+    /// Reverts month from votingR1 → vetoes. Clears all R1 votes.
+    private func revertToVetoes(monthId: String) async throws {
+        let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
+        let batch = db.db.batch()
+        batch.updateData(["status": MonthStatus.vetoes.rawValue],
+                         forDocument: db.monthRef(monthId: monthId))
+        for doc in booksSnap.documents {
+            batch.updateData(["votingR1Voters": []], forDocument: doc.reference)
+        }
+        try await batch.commit()
+    }
+
+    /// Reverts month from votingR2 → votingR1. Clears R2 votes and advancedToR2 flags.
+    private func revertToVotingR1(monthId: String) async throws {
+        let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
+        let batch = db.db.batch()
+        batch.updateData(["status": MonthStatus.votingR1.rawValue],
+                         forDocument: db.monthRef(monthId: monthId))
+        for doc in booksSnap.documents {
+            batch.updateData(["votingR2Voters": [], "advancedToR2": false],
+                             forDocument: doc.reference)
+        }
+        try await batch.commit()
+    }
+
+    /// Reverts month from reading → votingR2. Clears all selectedBook fields.
+    private func revertToVotingR2(monthId: String) async throws {
+        try await db.monthRef(monthId: monthId).updateData([
+            "status":               MonthStatus.votingR2.rawValue,
+            "selectedBookId":       FieldValue.delete(),
+            "selectedBookTitle":    FieldValue.delete(),
+            "selectedBookAuthor":   FieldValue.delete(),
+            "selectedBookCoverUrl": FieldValue.delete()
+        ])
+    }
+
+    // MARK: - Finalize scoring
+
+    /// Computes the group average from all submitted scores and marks the month complete.
+    private func finalizeScoring(monthId: String) async throws {
+        let scoresSnap = try await db.scoresRef(monthId: monthId).getDocuments()
+        let scoreValues = scoresSnap.documents.compactMap { $0.data()["score"] as? Double }
+
+        var update: [String: Any] = ["status": MonthStatus.complete.rawValue]
+        if !scoreValues.isEmpty {
+            let avg = scoreValues.reduce(0, +) / Double(scoreValues.count)
+            // Round to 1 decimal place for clean display
+            update["groupAvgScore"] = (avg * 10).rounded() / 10
+        }
+
+        try await db.monthRef(monthId: monthId).updateData(update)
+    }
+
+    // MARK: - Save event details
+
     private func saveDetails() async {
         guard let monthId = month.id else { return }
         isSavingDetails = true
@@ -288,7 +485,6 @@ struct MonthManagementView: View {
         isSavingDetails = false
         if setupViewModel.errorMessage == nil {
             detailsSavedFeedback = true
-            // Reset feedback after 2 seconds
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             detailsSavedFeedback = false
         }

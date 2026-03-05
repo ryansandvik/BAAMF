@@ -1,9 +1,24 @@
 import SwiftUI
 import FirebaseCore
+import UIKit
+
+// MARK: - App delegate (portrait-only lock)
+
+private class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        .portrait
+    }
+}
+
+// MARK: - App
 
 @main
 struct BAAMFApp: App {
 
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var authViewModel = AuthViewModel()
 
     init() {

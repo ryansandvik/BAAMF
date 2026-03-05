@@ -31,14 +31,12 @@ struct MainTabView: View {
                 Label("Schedule", systemImage: "calendar")
             }
 
-            // Admin — only visible to admins
-            if authViewModel.isAdmin {
-                NavigationStack {
-                    AdminView()
-                }
-                .tabItem {
-                    Label("Admin", systemImage: "gearshape.fill")
-                }
+            // Profile — visible to all members; admin controls are gated inside
+            NavigationStack {
+                ProfileView()
+            }
+            .tabItem {
+                Label("Profile", systemImage: "person.fill")
             }
         }
     }

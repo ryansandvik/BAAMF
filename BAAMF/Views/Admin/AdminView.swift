@@ -1,35 +1,46 @@
 import SwiftUI
 import Combine
 
-/// Admin-only control panel: force status transitions, enter scores on behalf of members,
-/// manage host schedule overrides. Full implementation in Phase 6.
-struct AdminView: View {
+/// Profile tab — visible to all members.
+/// Shows user info and sign-out for everyone; admin controls shown only to admins.
+struct ProfileView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
 
     var body: some View {
         List {
+
+            // MARK: User info
             Section {
-                Label("Signed in as \(authViewModel.currentMember?.name ?? "Admin")",
-                      systemImage: "person.fill.checkmark")
-                    .foregroundStyle(.secondary)
+                Label(
+                    authViewModel.currentMember?.name ?? "Member",
+                    systemImage: "person.circle.fill"
+                )
+                .foregroundStyle(.primary)
             }
 
-            Section("Coming in Phase 6") {
-                Label("Force Status Transition", systemImage: "arrow.right.circle")
-                    .foregroundStyle(.secondary)
-                Label("Enter Scores on Behalf", systemImage: "pencil.circle")
-                    .foregroundStyle(.secondary)
-                Label("Manage Host Schedule", systemImage: "calendar.badge.plus")
-                    .foregroundStyle(.secondary)
-                Label("Force Swap", systemImage: "arrow.left.arrow.right")
-                    .foregroundStyle(.secondary)
+            // MARK: Admin controls (admins only)
+            if authViewModel.isAdmin {
+                Section("Admin Controls") {
+                    Label("Coming in Phase 6", systemImage: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
+            }
+
+            // MARK: Sign out
+            Section {
+                Button(role: .destructive) {
+                    authViewModel.signOut()
+                } label: {
+                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                }
             }
         }
-        .navigationTitle("Admin")
+        .navigationTitle("Profile")
     }
 }
 
 #Preview {
-    NavigationStack { AdminView() }
+    NavigationStack { ProfileView() }
         .environmentObject(AuthViewModel())
 }

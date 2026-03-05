@@ -17,8 +17,8 @@ private struct BookSubmission: Encodable {
     let isRemovedByVeto: Bool
     let vetoType2Voters: [String]
     let vetoType2Penalty: Bool
-    let netVotesR1: Int
-    let netVotesR2: Int
+    let votingR1Voters: [String]
+    let votingR2Voters: [String]
     let advancedToR2: Bool
 }
 
@@ -167,12 +167,12 @@ final class SubmissionsViewModel: ObservableObject {
             googleRating:    googleBook.rating,
             pageCount:       googleBook.pageCount,
             coverUrl:        googleBook.coverUrl,
-            isRemovedByVeto: false,
-            vetoType2Voters: [],
+            isRemovedByVeto:  false,
+            vetoType2Voters:  [],
             vetoType2Penalty: false,
-            netVotesR1:      0,
-            netVotesR2:      0,
-            advancedToR2:    false
+            votingR1Voters:   [],
+            votingR2Voters:   [],
+            advancedToR2:     false
         )
 
         do {

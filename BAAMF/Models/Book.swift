@@ -27,9 +27,12 @@ struct Book: Identifiable, Codable, Equatable {
     /// True if the 25% threshold was met — book carries a -2 net vote penalty in R1.
     var vetoType2Penalty: Bool
 
-    // Vote aggregates (written by Cloud Functions, not clients)
-    var netVotesR1: Int
-    var netVotesR2: Int
+    // Voting state
+    /// User IDs who voted for this book in Round 1.
+    var votingR1Voters: [String]
+    /// User IDs who voted for this book in Round 2.
+    var votingR2Voters: [String]
+    /// Set to true when the host advances R1→R2 for the books that made the cut.
     var advancedToR2: Bool
 
     // MARK: Computed helpers
@@ -40,7 +43,12 @@ struct Book: Identifiable, Codable, Equatable {
         return description
     }
 
+    /// Net R1 votes: raw vote count minus the Hard Pass penalty if applicable.
+    var r1NetVotes: Int {
+        votingR1Voters.count + (vetoType2Penalty ? K.Veto.type2PenaltyVotes : 0)
+    }
+
     /// Whether this book is eligible to be voted on in the current round.
     var isEligibleForR1: Bool { !isRemovedByVeto }
-    var isEligibleForR2: Bool { !isRemovedByVeto && advancedToR2 }
+    var isEligibleForR2: Bool { advancedToR2 }
 }

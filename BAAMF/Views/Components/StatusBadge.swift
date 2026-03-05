@@ -20,8 +20,9 @@ struct StatusBadge: View {
         case .setup:        return .gray
         case .submissions:  return .blue
         case .vetoes:       return .orange
-        case .votingR1:     return .purple
-        case .votingR2:     return .indigo
+        case .votingR1:     return .indigo
+        case .votingR2:     return .purple
+        case .reading:      return .teal
         case .scoring:      return .yellow
         case .complete:     return .green
         }

@@ -43,6 +43,21 @@ struct BookEditView: View {
 
                     Divider()
 
+                    // Google Books description — context for what the pitch replaces
+                    if !book.description.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Book Description")
+                                .font(.footnote.bold())
+                                .foregroundStyle(.secondary)
+                            Text(book.description)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal)
+
+                        Divider()
+                    }
+
                     // Pitch editor
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Your Pitch (Optional)")
@@ -51,9 +66,9 @@ struct BookEditView: View {
                         Text("Replace the book description with your own pitch to the club.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
-                        TextEditor(text: $pitch)
-                            .frame(minHeight: 100)
-                            .padding(8)
+                        TextField("Write your pitch here…", text: $pitch, axis: .vertical)
+                            .lineLimit(4...8)
+                            .padding(10)
                             .background(Color(.systemGray6))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .font(.body)
