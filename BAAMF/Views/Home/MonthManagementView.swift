@@ -2,19 +2,22 @@ import SwiftUI
 import FirebaseFirestore
 
 /// Single sheet for controlling month management.
-/// • All users: view phase timeline, sign out.
+/// • All users: view phase timeline.
 /// • Host / admin only: advance/revert phases, edit event details.
 struct MonthManagementView: View {
 
     let month: ClubMonth
 
     @StateObject private var setupViewModel = HostSetupViewModel()
+    @StateObject private var settingsVM = AppSettingsViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
     // Phase transition state
     @State private var targetStatus: MonthStatus?
-    @State private var showPhaseConfirm = false
+    @State private var showAdvanceSheet = false      // forward transitions — has DatePicker
+    @State private var showRevertConfirm = false     // backward transitions — destructive dialog
+    @State private var proposedDeadline: Date = Date()
     @State private var isSavingPhase = false
 
     // Event details state
@@ -42,10 +45,23 @@ struct MonthManagementView: View {
         let i = currentIndex - 1
         return i >= 0 ? allPhases[i] : nil
     }
-    private var isGoingBackward: Bool {
-        guard let target = targetStatus,
-              let ti = allPhases.firstIndex(of: target) else { return false }
-        return ti < currentIndex
+
+    /// True when the target phase gets a deadline DatePicker.
+    /// Deadlines are not used in pick4 mode.
+    private var targetPhaseHasDeadline: Bool {
+        guard let target = targetStatus else { return false }
+        guard month.submissionMode != .pick4 else { return false }
+        return deadlineKey(for: target) != nil
+    }
+
+    private func deadlineKey(for status: MonthStatus) -> String? {
+        switch status {
+        case .submissions: return "submissionDeadline"
+        case .vetoes:      return "vetoDeadline"
+        case .votingR1:    return "votingR1Deadline"
+        case .votingR2:    return "votingR2Deadline"
+        default:           return nil
+        }
     }
 
     var body: some View {
@@ -65,7 +81,8 @@ struct MonthManagementView: View {
                         if let next = nextPhase {
                             Button {
                                 targetStatus = next
-                                showPhaseConfirm = true
+                                proposedDeadline = settingsVM.settings.defaultDeadline(for: next) ?? Date()
+                                showAdvanceSheet = true
                             } label: {
                                 Label("Advance to \(next.displayName)",
                                       systemImage: "arrow.right.circle.fill")
@@ -80,7 +97,7 @@ struct MonthManagementView: View {
                         if let prev = previousPhase {
                             Button(role: .destructive) {
                                 targetStatus = prev
-                                showPhaseConfirm = true
+                                showRevertConfirm = true
                             } label: {
                                 Label("Return to \(prev.displayName)",
                                       systemImage: "arrow.left.circle")
@@ -163,34 +180,37 @@ struct MonthManagementView: View {
             .onAppear {
                 if isHostOrAdmin { setupViewModel.load(from: month) }
             }
+            .task { await settingsVM.load() }
+            // Unsaved changes dialog
             .confirmationDialog(
                 "Unsaved Changes",
                 isPresented: $showUnsavedChangesConfirm,
                 titleVisibility: .visible
             ) {
                 Button("Save & Close") {
-                    Task {
-                        await saveDetails()
-                        dismiss()
-                    }
+                    Task { await saveDetails(); dismiss() }
                 }
                 Button("Discard Changes", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) { }
             } message: {
                 Text("You have unsaved event details. Would you like to save them before closing?")
             }
-            // Phase transition confirmation
+            // Backward transition: destructive confirmationDialog
             .confirmationDialog(
-                confirmTitle,
-                isPresented: $showPhaseConfirm,
+                revertTitle,
+                isPresented: $showRevertConfirm,
                 titleVisibility: .visible
             ) {
-                Button(confirmActionLabel, role: isGoingBackward ? .destructive : nil) {
-                    Task { await changePhase() }
+                Button("Return to \(targetStatus?.displayName ?? "")", role: .destructive) {
+                    Task { await changePhase(deadline: nil) }
                 }
                 Button("Cancel", role: .cancel) { targetStatus = nil }
             } message: {
-                Text(confirmMessage)
+                Text(revertMessage)
+            }
+            // Forward transition: sheet with optional DatePicker
+            .sheet(isPresented: $showAdvanceSheet) {
+                advanceSheet
             }
             .overlay {
                 if isSavingPhase {
@@ -201,6 +221,55 @@ struct MonthManagementView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Advance phase sheet
+
+    @ViewBuilder
+    private var advanceSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(advanceMessage)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+
+                if targetPhaseHasDeadline {
+                    Section {
+                        DatePicker(
+                            "Deadline",
+                            selection: $proposedDeadline,
+                            in: Date()...,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                    } header: {
+                        Text("Phase Deadline")
+                    } footer: {
+                        Text("This phase will auto-advance when the deadline passes. You can always advance early from Phase Control.")
+                    }
+                }
+            }
+            .navigationTitle("Advance to \(targetStatus?.displayName ?? "")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showAdvanceSheet = false
+                        targetStatus = nil
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Advance") {
+                        showAdvanceSheet = false
+                        let deadline = targetPhaseHasDeadline ? proposedDeadline : nil
+                        Task { await changePhase(deadline: deadline) }
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents(targetPhaseHasDeadline ? [.medium] : [.fraction(0.35)])
     }
 
     // MARK: - Phase timeline
@@ -269,34 +338,29 @@ struct MonthManagementView: View {
 
     // MARK: - Confirmation strings
 
-    private var confirmTitle: String {
-        guard let target = targetStatus else { return "Change Phase?" }
-        return isGoingBackward
-            ? "Return to \(target.displayName)?"
-            : "Advance to \(target.displayName)?"
+    private var revertTitle: String {
+        guard let target = targetStatus else { return "Return to Previous Phase?" }
+        return "Return to \(target.displayName)?"
     }
 
-    private var confirmActionLabel: String {
-        guard let target = targetStatus else { return "Confirm" }
-        return isGoingBackward ? "Return to \(target.displayName)" : "Advance"
-    }
-
-    private var confirmMessage: String {
+    private var revertMessage: String {
         guard let target = targetStatus else { return "" }
-        if isGoingBackward {
-            switch (month.status, target) {
-            case (.votingR1, .vetoes):
-                return "All Round 1 votes will be cleared. Members will need to vote again when the round reopens."
-            case (.votingR2, .votingR1):
-                return "All Round 2 votes will be cleared and books will need to be re-advanced to Round 2."
-            case (.reading, .votingR2):
-                return "The selected book will be cleared and Round 2 voting will reopen."
-            case (.vetoes, .submissions):
-                return "All vetoes will be cleared and submissions will reopen. Any Hard Pass charges spent this month will be refunded."
-            default:
-                return "Going back to \(target.displayName) will reopen that phase. Any actions members have taken in the current phase may be affected."
-            }
+        switch (month.status, target) {
+        case (.votingR1, .vetoes):
+            return "All Round 1 votes will be cleared. Members will need to vote again when the round reopens."
+        case (.votingR2, .votingR1):
+            return "All Round 2 votes will be cleared and books will need to be re-advanced to Round 2."
+        case (.reading, .votingR2):
+            return "The selected book will be cleared and Round 2 voting will reopen."
+        case (.vetoes, .submissions):
+            return "All vetoes will be cleared and submissions will reopen. Any Hard Pass charges spent this month will be refunded."
+        default:
+            return "Going back to \(target.displayName) will reopen that phase. Any actions members have taken in the current phase may be affected."
         }
+    }
+
+    private var advanceMessage: String {
+        guard let target = targetStatus else { return "" }
         switch (month.status, target) {
         case (.submissions, .vetoes):
             return "Submissions will close immediately. Members can no longer submit or edit books."
@@ -317,7 +381,7 @@ struct MonthManagementView: View {
 
     // MARK: - Phase change routing
 
-    private func changePhase() async {
+    private func changePhase(deadline: Date?) async {
         guard let target = targetStatus, let monthId = month.id else { return }
         isSavingPhase = true
         setupViewModel.errorMessage = nil
@@ -325,10 +389,10 @@ struct MonthManagementView: View {
             switch (month.status, target) {
             // Special forward transitions
             case (.votingR1, .votingR2):
-                try await advanceToR2(monthId: monthId)
+                try await advanceToR2(monthId: monthId, deadline: deadline)
             case (.votingR2, .reading):
                 try await advanceToReading(monthId: monthId)
-            // Special backward transitions
+            // Special backward transitions (all clear deadlines)
             case (.vetoes, .submissions):
                 try await revertToSubmissions(monthId: monthId)
             case (.votingR1, .vetoes):
@@ -339,10 +403,13 @@ struct MonthManagementView: View {
                 try await revertToVotingR2(monthId: monthId)
             case (.scoring, .complete):
                 try await finalizeScoring(monthId: monthId)
-            // All other transitions: simple status update
+            // All other transitions: simple status update + optional deadline
             default:
-                try await db.monthRef(monthId: monthId)
-                    .updateData(["status": target.rawValue])
+                var update: [String: Any] = ["status": target.rawValue]
+                if let dl = deadline, let key = deadlineKey(for: target) {
+                    update[key] = Timestamp(date: dl)
+                }
+                try await db.monthRef(monthId: monthId).updateData(update)
             }
             dismiss()
         } catch {
@@ -354,8 +421,7 @@ struct MonthManagementView: View {
 
     // MARK: - Forward transitions
 
-    /// Closes R1 and marks the top `K.Voting.r2AdvanceCount` books as advancedToR2.
-    private func advanceToR2(monthId: String) async throws {
+    private func advanceToR2(monthId: String, deadline: Date?) async throws {
         let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
 
         struct BookScore {
@@ -377,20 +443,20 @@ struct MonthManagementView: View {
             : (scores.last?.netVotes ?? 0)
 
         let batch = db.db.batch()
-        batch.updateData(["status": MonthStatus.votingR2.rawValue],
-                         forDocument: db.monthRef(monthId: monthId))
+        var monthUpdate: [String: Any] = ["status": MonthStatus.votingR2.rawValue]
+        if let dl = deadline {
+            monthUpdate["votingR2Deadline"] = Timestamp(date: dl)
+        }
+        batch.updateData(monthUpdate, forDocument: db.monthRef(monthId: monthId))
         for score in scores where score.netVotes >= cutoffScore {
             batch.updateData(["advancedToR2": true], forDocument: score.ref)
         }
         try await batch.commit()
     }
 
-    /// Closes R2, determines the winner by R2 vote count, and writes book details
-    /// (including document ID) to the month document for use in the reading and scoring phases.
     private func advanceToReading(monthId: String) async throws {
         let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
 
-        // Find the R2 book with the most votes, preserving document ID for scoring
         let winner = booksSnap.documents
             .filter { ($0.data()["advancedToR2"] as? Bool) == true }
             .map { doc -> (id: String, data: [String: Any], r2Count: Int) in
@@ -409,17 +475,15 @@ struct MonthManagementView: View {
             if let coverUrl = winner.data["coverUrl"] as? String {
                 update["selectedBookCoverUrl"] = coverUrl
             }
+            if let submitterId = winner.data["submitterId"] as? String, !submitterId.isEmpty {
+                update["selectedBookSubmitterId"] = submitterId
+            }
         }
 
         try await db.monthRef(monthId: monthId).updateData(update)
-
-        // Auto-create the next month's document if it doesn't exist yet.
-        // Failure is intentionally silent — it must not block the phase advance.
         await autoCreateNextMonth()
     }
 
-    /// Looks up the host for the next calendar month from the schedule and creates
-    /// a stub document (status: .setup) if one doesn't already exist.
     private func autoCreateNextMonth() async {
         let (nextYear, nextMonthNum): (Int, Int) = month.month == 12
             ? (month.year + 1, 1)
@@ -427,11 +491,9 @@ struct MonthManagementView: View {
 
         let nextMonthId = ClubMonth.monthId(year: nextYear, month: nextMonthNum)
 
-        // Skip if the document already exists
         guard let snap = try? await db.monthRef(monthId: nextMonthId).getDocument(),
               !snap.exists else { return }
 
-        // Pull the assigned host from the schedule (empty string if unassigned)
         let scheduleSnap = try? await db.hostScheduleRef(year: nextYear).getDocument()
         let schedule     = try? scheduleSnap?.data(as: HostSchedule.self)
         let nextHostId   = schedule?.assignments[String(nextMonthNum)] ?? ""
@@ -447,9 +509,15 @@ struct MonthManagementView: View {
     }
 
     // MARK: - Backward transitions
+    // All backward transitions clear ALL deadline fields to prevent stale auto-advance.
 
-    /// Reverts month from vetoes → submissions.
-    /// Clears all Hard Pass state on books and refunds charges used this month.
+    private var deadlineClearFields: [String: Any] {[
+        "submissionDeadline": FieldValue.delete(),
+        "vetoDeadline":       FieldValue.delete(),
+        "votingR1Deadline":   FieldValue.delete(),
+        "votingR2Deadline":   FieldValue.delete(),
+    ]}
+
     private func revertToSubmissions(monthId: String) async throws {
         let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
 
@@ -466,8 +534,9 @@ struct MonthManagementView: View {
         }
 
         let batch = db.db.batch()
-        batch.updateData(["status": MonthStatus.submissions.rawValue],
-                         forDocument: db.monthRef(monthId: monthId))
+        var monthUpdate: [String: Any] = ["status": MonthStatus.submissions.rawValue]
+        monthUpdate.merge(deadlineClearFields) { _, new in new }
+        batch.updateData(monthUpdate, forDocument: db.monthRef(monthId: monthId))
 
         for doc in booksSnap.documents {
             batch.updateData(["vetoType2Voters": [], "vetoType2Penalty": false],
@@ -485,24 +554,24 @@ struct MonthManagementView: View {
         try await batch.commit()
     }
 
-    /// Reverts month from votingR1 → vetoes. Clears all R1 votes.
     private func revertToVetoes(monthId: String) async throws {
         let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
         let batch = db.db.batch()
-        batch.updateData(["status": MonthStatus.vetoes.rawValue],
-                         forDocument: db.monthRef(monthId: monthId))
+        var monthUpdate: [String: Any] = ["status": MonthStatus.vetoes.rawValue]
+        monthUpdate.merge(deadlineClearFields) { _, new in new }
+        batch.updateData(monthUpdate, forDocument: db.monthRef(monthId: monthId))
         for doc in booksSnap.documents {
             batch.updateData(["votingR1Voters": []], forDocument: doc.reference)
         }
         try await batch.commit()
     }
 
-    /// Reverts month from votingR2 → votingR1. Clears R2 votes and advancedToR2 flags.
     private func revertToVotingR1(monthId: String) async throws {
         let booksSnap = try await db.booksRef(monthId: monthId).getDocuments()
         let batch = db.db.batch()
-        batch.updateData(["status": MonthStatus.votingR1.rawValue],
-                         forDocument: db.monthRef(monthId: monthId))
+        var monthUpdate: [String: Any] = ["status": MonthStatus.votingR1.rawValue]
+        monthUpdate.merge(deadlineClearFields) { _, new in new }
+        batch.updateData(monthUpdate, forDocument: db.monthRef(monthId: monthId))
         for doc in booksSnap.documents {
             batch.updateData(["votingR2Voters": [], "advancedToR2": false],
                              forDocument: doc.reference)
@@ -510,20 +579,21 @@ struct MonthManagementView: View {
         try await batch.commit()
     }
 
-    /// Reverts month from reading → votingR2. Clears all selectedBook fields.
     private func revertToVotingR2(monthId: String) async throws {
-        try await db.monthRef(monthId: monthId).updateData([
-            "status":               MonthStatus.votingR2.rawValue,
-            "selectedBookId":       FieldValue.delete(),
-            "selectedBookTitle":    FieldValue.delete(),
-            "selectedBookAuthor":   FieldValue.delete(),
-            "selectedBookCoverUrl": FieldValue.delete()
-        ])
+        var update: [String: Any] = [
+            "status":                    MonthStatus.votingR2.rawValue,
+            "selectedBookId":            FieldValue.delete(),
+            "selectedBookTitle":         FieldValue.delete(),
+            "selectedBookAuthor":        FieldValue.delete(),
+            "selectedBookCoverUrl":      FieldValue.delete(),
+            "selectedBookSubmitterId":   FieldValue.delete()
+        ]
+        update.merge(deadlineClearFields) { _, new in new }
+        try await db.monthRef(monthId: monthId).updateData(update)
     }
 
     // MARK: - Finalize scoring
 
-    /// Computes the group average from all submitted scores and marks the month complete.
     private func finalizeScoring(monthId: String) async throws {
         let scoresSnap = try await db.scoresRef(monthId: monthId).getDocuments()
         let scoreValues = scoresSnap.documents.compactMap { $0.data()["score"] as? Double }
@@ -531,7 +601,6 @@ struct MonthManagementView: View {
         var update: [String: Any] = ["status": MonthStatus.complete.rawValue]
         if !scoreValues.isEmpty {
             let avg = scoreValues.reduce(0, +) / Double(scoreValues.count)
-            // Round to 1 decimal place for clean display
             update["groupAvgScore"] = (avg * 10).rounded() / 10
         }
 

@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Profile Pictures ──────────────────────────────────────────────────────
+    // Each user can only read/write their own profile picture.
+    // All authenticated members can read any profile picture (for displaying
+    // avatars throughout the app).
+
+    // Instead of embedding the `.jpg` extension in the match path, capture the
+    // entire file name and check the extension using a condition.  Wildcards
+    // must match an entire path segment【917348089064214†L1728-L1739】, so `{userId}.jpg` is invalid.
+    match /profilePictures/{userId}/{fileName} {
+      // Anyone with a Firebase account can read profile pictures
+      allow read: if request.auth != null;
+      // Only the authenticated owner can upload/update their picture.  The file must be under 5 MB
+      // and have a JPEG extension.  Use `.matches()` to validate the extension【67956158809831†L1679-L1684】.
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && fileName.matches('.*\\.jpg')
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+  }
+}

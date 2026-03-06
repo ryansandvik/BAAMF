@@ -6,6 +6,10 @@ import FirebaseFirestore
 enum UserRole: String, Codable {
     case member
     case admin
+    /// Virtual members participate in nominations, voting, and scoring normally
+    /// but are excluded from automatic host scheduling. Admins can still assign
+    /// them a month manually.
+    case virtual
 }
 
 // MARK: - VetoCharge
@@ -29,6 +33,7 @@ struct Member: Identifiable, Codable, Equatable {
     var role: UserRole
     var vetoCharges: [VetoCharge]
     var fcmToken: String?
+    var photoURL: String?
 
     // MARK: Computed helpers
 
@@ -67,4 +72,5 @@ struct Member: Identifiable, Codable, Equatable {
     }
 
     var isAdmin: Bool { role == .admin }
+    var isVirtual: Bool { role == .virtual }
 }

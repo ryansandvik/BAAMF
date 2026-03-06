@@ -53,6 +53,26 @@ final class FirestoreService {
         monthRef(monthId: monthId).collection(K.Firestore.scores)
     }
 
+    func inviteCodesRef() -> CollectionReference {
+        db.collection("inviteCodes")
+    }
+
+    func inviteCodeRef(code: String) -> DocumentReference {
+        inviteCodesRef().document(code.uppercased())
+    }
+
+    func attendanceRef(monthId: String) -> CollectionReference {
+        monthRef(monthId: monthId).collection("attendance")
+    }
+
+    func attendanceDocRef(monthId: String, uid: String) -> DocumentReference {
+        attendanceRef(monthId: monthId).document(uid)
+    }
+
+    func settingsRef() -> DocumentReference {
+        db.collection("settings").document("defaults")
+    }
+
     func swapRequestsRef(year: Int) -> CollectionReference {
         hostScheduleRef(year: year).collection(K.Firestore.swapRequests)
     }

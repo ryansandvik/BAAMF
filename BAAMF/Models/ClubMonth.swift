@@ -78,8 +78,30 @@ struct ClubMonth: Identifiable, Codable, Equatable {
     var selectedBookTitle: String?
     var selectedBookAuthor: String?
     var selectedBookCoverUrl: String?
+    /// The uid of the member who submitted the winning book.
+    /// Nil for historical entries and for host-select-4 months where the host
+    /// chose from their own submissions. Only revealed in UI once status reaches .reading.
+    var selectedBookSubmitterId: String?
+
+    // Phase deadlines — set when each phase opens; the Cloud Scheduler auto-advances
+    // the month when the deadline passes. Not applicable in hostSelect4 mode.
+    var submissionDeadline: Date?
+    var vetoDeadline: Date?
+    var votingR1Deadline: Date?
+    var votingR2Deadline: Date?
 
     // MARK: Computed helpers
+
+    /// The active deadline for the current phase, if one is set.
+    var activeDeadline: Date? {
+        switch status {
+        case .submissions: return submissionDeadline
+        case .vetoes:      return vetoDeadline
+        case .votingR1:    return votingR1Deadline
+        case .votingR2:    return votingR2Deadline
+        default:           return nil
+        }
+    }
 
     /// The canonical Firestore document ID for the given year/month.
     static func monthId(year: Int, month: Int) -> String {

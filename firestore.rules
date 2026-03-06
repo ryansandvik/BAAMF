@@ -18,6 +18,31 @@ service cloud.firestore {
         get(/databases/$(database)/documents/months/$(monthId)).data.hostId == request.auth.uid;
     }
 
+    // ── App Settings ─────────────────────────────────────────────────────────
+    // Any member can read defaults (needed to pre-fill deadline picker).
+    // Only admins may write.
+
+    match /settings/{doc} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Invite Codes ──────────────────────────────────────────────────────────
+    // Anyone (including unauthenticated users) can read a code to validate it
+    // before account creation. Only admins may create codes. Any authenticated
+    // user may mark a code as used (happens immediately after registration).
+    // Only admins may delete codes.
+
+    match /inviteCodes/{code} {
+      allow read:   if true;
+      allow create: if isAdmin();
+      allow update: if isAuth() &&
+                       request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['usedAt', 'usedBy']);
+      allow delete: if isAdmin();
+    }
+
     // ── Users ─────────────────────────────────────────────────────────────────
     // Any member can read; only the owner or an admin can write.
 
@@ -84,6 +109,12 @@ service cloud.firestore {
       match /scores/{userId} {
         allow read:  if isAuth();
         allow write: if request.auth.uid == userId || isAdmin();
+      }
+
+      // Attendance — any member can read; members write only their own RSVP.
+      match /attendance/{userId} {
+        allow read:  if isAuth();
+        allow write: if request.auth.uid == userId;
       }
     }
   }

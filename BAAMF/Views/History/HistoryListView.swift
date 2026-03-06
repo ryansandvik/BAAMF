@@ -42,7 +42,8 @@ struct HistoryListView: View {
                     ForEach(group.months) { month in
                         NavigationLink {
                             HistoryDetailView(month: month, allMembers: viewModel.allMembers,
-                                             isAdmin: authViewModel.isAdmin)
+                                             isAdmin: authViewModel.isAdmin,
+                                             currentUserId: authViewModel.currentUserId ?? "")
                         } label: {
                             monthRow(month)
                         }

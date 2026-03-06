@@ -29,6 +29,7 @@ final class HomeViewModel: ObservableObject {
     private var currentMonthListener: ListenerRegistration?
     private var nextMonthListener: ListenerRegistration?
     private var booksListener: ListenerRegistration?
+    private var membersListener: ListenerRegistration?
 
     // MARK: - Lifecycle
 
@@ -38,7 +39,7 @@ final class HomeViewModel: ObservableObject {
         startPreviousMonthListener(monthId: ids.previous)
         startCurrentMonthListener(monthId: ids.current)
         startNextMonthListener(monthId: ids.next)
-        Task { await loadAllMembers() }
+        startMembersListener()
     }
 
     func stop() {
@@ -46,6 +47,7 @@ final class HomeViewModel: ObservableObject {
         currentMonthListener?.remove()
         nextMonthListener?.remove()
         booksListener?.remove()
+        membersListener?.remove()
     }
 
     deinit {
@@ -53,6 +55,7 @@ final class HomeViewModel: ObservableObject {
         currentMonthListener?.remove()
         nextMonthListener?.remove()
         booksListener?.remove()
+        membersListener?.remove()
     }
 
     // MARK: - Derived state helpers
@@ -145,13 +148,16 @@ final class HomeViewModel: ObservableObject {
             }
     }
 
-    private func loadAllMembers() async {
-        do {
-            allMembers = try await firestoreService.fetchAllMembers()
-                .sorted { $0.name < $1.name }
-        } catch {
-            // Non-fatal — member names degrade gracefully to "Unknown"
-        }
+    private func startMembersListener() {
+        membersListener = firestoreService.usersRef()
+            .addSnapshotListener { [weak self] snapshot, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.allMembers = (snapshot?.documents
+                        .compactMap { try? $0.data(as: Member.self) } ?? [])
+                        .sorted { $0.name < $1.name }
+                }
+            }
     }
 
     // MARK: - Member name lookup

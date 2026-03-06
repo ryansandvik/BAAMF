@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseFirestore
+import Combine
 
 /// Full detail view for a completed month: book info, event details, and all member scores.
 struct HistoryDetailView: View {
@@ -7,6 +8,7 @@ struct HistoryDetailView: View {
     let month: ClubMonth
     let allMembers: [Member]
     var isAdmin: Bool = false
+    var currentUserId: String = ""
 
     @State private var scores: [BookScore] = []
     @State private var isLoading = true
@@ -64,6 +66,9 @@ struct HistoryDetailView: View {
             VStack(spacing: 20) {
                 bookCard
                 if hasEventDetails { eventCard }
+                if let monthId = month.id {
+                    AttendanceCard(monthId: monthId, allMembers: allMembers, currentUserId: currentUserId)
+                }
                 scoresCard
             }
             .padding()
@@ -110,6 +115,14 @@ struct HistoryDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 2)
+                }
+
+                if let submitterId = month.selectedBookSubmitterId,
+                   let submitter = allMembers.first(where: { $0.id == submitterId }) {
+                    Text("Submitted by \(submitter.name)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 }
 
                 if month.isHistorical == true {
@@ -260,5 +273,159 @@ struct HistoryDetailView: View {
                         .compactMap { try? $0.data(as: BookScore.self) } ?? []
                 }
             }
+    }
+}
+
+// MARK: - Attendance card
+
+private struct AttendanceCard: View {
+
+    let monthId: String
+    let allMembers: [Member]
+    let currentUserId: String
+
+    @StateObject private var vm: AttendanceViewModel
+    @State private var showRoster = false
+
+    init(monthId: String, allMembers: [Member], currentUserId: String) {
+        self.monthId = monthId
+        self.allMembers = allMembers
+        self.currentUserId = currentUserId
+        _vm = StateObject(wrappedValue: AttendanceViewModel(monthId: monthId))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Attendance")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
+                // Tappable count pill
+                if vm.attendingCount > 0 || vm.notAttendingCount > 0 {
+                    Button { showRoster = true } label: {
+                        Text("\(vm.attendingCount) going")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.green.opacity(0.12))
+                            .foregroundStyle(.green)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                // Roster icon
+                Button { showRoster = true } label: {
+                    Image(systemName: "person.2")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 4)
+
+                // Current user's quick toggle
+                HStack(spacing: 6) {
+                    rsvpButton(label: "Going",    value: true,  color: .green)
+                    rsvpButton(label: "Not going", value: false, color: .red)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            Divider().padding(.horizontal)
+
+            // Member rows
+            ForEach(sortedRows, id: \.id) { row in
+                HStack {
+                    Text(row.name)
+                        .font(.body)
+                    Spacer()
+                    attendanceLabel(for: row.status)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+
+                if row.id != sortedRows.last?.id {
+                    Divider().padding(.horizontal)
+                }
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .task { vm.start() }
+        .onDisappear { vm.stop() }
+        .sheet(isPresented: $showRoster) {
+            AttendanceRosterSheet(allMembers: allMembers, records: vm.records)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private struct MemberAttendanceRow: Identifiable {
+        let id: String
+        let name: String
+        let status: Bool?   // true = going, false = not going, nil = no response
+    }
+
+    private var sortedRows: [MemberAttendanceRow] {
+        allMembers
+            .map { member in
+                let memberId = member.id ?? ""
+                let status = vm.records.first { $0.id == memberId }?.attending
+                return MemberAttendanceRow(id: memberId, name: member.name, status: status)
+            }
+            // Sort: going first, then not going, then no response; alphabetical within each group
+            .sorted {
+                switch ($0.status, $1.status) {
+                case (true, true):   return $0.name < $1.name
+                case (true, _):      return true
+                case (false, false): return $0.name < $1.name
+                case (false, nil):   return true
+                default:             return $0.name < $1.name
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func attendanceLabel(for status: Bool?) -> some View {
+        switch status {
+        case true:
+            Label("Going", systemImage: "checkmark.circle.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.green)
+        case false:
+            Label("Not going", systemImage: "xmark.circle.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.red)
+        case nil:
+            Text("No response")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func rsvpButton(label: String, value: Bool, color: Color) -> some View {
+        let isSelected = vm.currentUserStatus(uid: currentUserId) == value
+        Button {
+            Task { await vm.setAttendance(attending: value, uid: currentUserId) }
+        } label: {
+            Text(label)
+                .font(.caption.bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(isSelected ? color.opacity(0.12) : Color(.systemGray5))
+                .foregroundStyle(isSelected ? color : Color.secondary)
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(isSelected ? color.opacity(0.4) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }

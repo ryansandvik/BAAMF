@@ -106,12 +106,16 @@ struct HomeView: View {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 8) {
                         StatusBadge(status: month.status)
-                        Button {
-                            managingMonth = month
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.body)
-                                .foregroundStyle(.tint)
+                        let canManage = (authViewModel.currentUserId ?? "") == month.hostId
+                            || authViewModel.isAdmin
+                        if canManage {
+                            Button {
+                                managingMonth = month
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .font(.body)
+                                    .foregroundStyle(.tint)
+                            }
                         }
                     }
                 }
@@ -136,6 +140,18 @@ struct HomeView: View {
             phaseContent(month, checkReplacement: checkReplacement)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+
+            // ── Attendance ───────────────────────────────────────────────────
+            if let monthId = month.id {
+                Divider()
+                AttendanceSection(
+                    monthId: monthId,
+                    currentUserId: authViewModel.currentUserId ?? "",
+                    allMembers: viewModel.allMembers
+                )
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+            }
         }
         .background(
             needsOrangeHighlight
@@ -171,7 +187,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private func setupContent(_ month: ClubMonth) -> some View {
-        let isHostOrAdmin = viewModel.isCurrentUserHost(userId: authViewModel.currentUserId ?? "")
+        let isHostOrAdmin = (authViewModel.currentUserId ?? "") == month.hostId
             || authViewModel.isAdmin
 
         VStack(alignment: .leading, spacing: 12) {
@@ -215,6 +231,9 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Submissions Open").font(.headline)
                     Text(description).font(.footnote).foregroundStyle(.secondary)
+                    if let deadline = month.submissionDeadline {
+                        deadlineLabel(deadline)
+                    }
                 }
             }
             NavigationLink {
@@ -248,6 +267,9 @@ struct HomeView: View {
                     } else {
                         Text("Review submitted books. Veto any you've read or don't want to read.")
                             .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let deadline = month.vetoDeadline {
+                        deadlineLabel(deadline)
                     }
                 }
             }
@@ -284,6 +306,9 @@ struct HomeView: View {
                     Text("Voting — Round 1").font(.headline)
                     Text("Cast your 2 votes. Voting is anonymous.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if let deadline = month.votingR1Deadline {
+                        deadlineLabel(deadline)
+                    }
                 }
             }
             NavigationLink {
@@ -308,6 +333,9 @@ struct HomeView: View {
                     Text("Voting — Round 2").font(.headline)
                     Text("The top books have advanced. Cast your final vote.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if let deadline = month.votingR2Deadline {
+                        deadlineLabel(deadline)
+                    }
                 }
             }
             NavigationLink {
@@ -354,6 +382,11 @@ struct HomeView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if let submitterId = month.selectedBookSubmitterId {
+                    Text("Submitted by \(viewModel.memberName(for: submitterId))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text("Scoring opens at your event.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -374,8 +407,13 @@ struct HomeView: View {
                     .font(.title2).foregroundStyle(.tint).frame(width: 32)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Scoring").font(.headline)
-                    Text("Rate this month's book on a 1–7 scale.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    if let title = month.selectedBookTitle {
+                        Text(title).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    if let submitterId = month.selectedBookSubmitterId {
+                        Text("Submitted by \(viewModel.memberName(for: submitterId))")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
             }
             NavigationLink {
@@ -407,6 +445,22 @@ struct HomeView: View {
             Text("See the full history in the History tab.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Deadline label
+
+    @ViewBuilder
+    private func deadlineLabel(_ date: Date) -> some View {
+        let isPast = date < Date()
+        Label(
+            isPast
+                ? "Closed \(date.formatted(date: .abbreviated, time: .omitted))"
+                : "Closes \(date.formatted(date: .abbreviated, time: .shortened))",
+            systemImage: isPast ? "clock.badge.xmark" : "clock.badge"
+        )
+        .font(.caption2)
+        .foregroundStyle(isPast ? Color.red : Color.orange)
+        .padding(.top, 2)
     }
 
     // MARK: - No month view
@@ -495,6 +549,103 @@ private struct CreateMonthSheet: View {
                 if success { dismiss() }
             }
         }
+    }
+}
+
+// MARK: - Attendance section (embedded in each month card)
+
+private struct AttendanceSection: View {
+
+    let monthId: String
+    let currentUserId: String
+    let allMembers: [Member]
+
+    @StateObject private var vm: AttendanceViewModel
+    @State private var showRoster = false
+
+    init(monthId: String, currentUserId: String, allMembers: [Member]) {
+        self.monthId = monthId
+        self.currentUserId = currentUserId
+        self.allMembers = allMembers
+        _vm = StateObject(wrappedValue: AttendanceViewModel(monthId: monthId))
+    }
+
+    private var userStatus: Bool? { vm.currentUserStatus(uid: currentUserId) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Attending toggle
+            HStack(spacing: 8) {
+                Image(systemName: "person.fill.checkmark")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                Text("Attending?")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            // Yes / No segmented buttons
+            HStack(spacing: 6) {
+                attendanceButton(label: "Yes", value: true)
+                attendanceButton(label: "No",  value: false)
+            }
+
+            // Summary pill — tappable to show roster
+            if vm.attendingCount > 0 || vm.notAttendingCount > 0 {
+                Button { showRoster = true } label: {
+                    Text("\(vm.attendingCount) going")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.12))
+                        .foregroundStyle(.green)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Roster icon button
+            Button { showRoster = true } label: {
+                Image(systemName: "person.2")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .task { vm.start() }
+        .onDisappear { vm.stop() }
+        .sheet(isPresented: $showRoster) {
+            AttendanceRosterSheet(allMembers: allMembers, records: vm.records)
+        }
+    }
+
+    @ViewBuilder
+    private func attendanceButton(label: String, value: Bool) -> some View {
+        let isSelected = userStatus == value
+        Button {
+            Task { await vm.setAttendance(attending: value, uid: currentUserId) }
+        } label: {
+            Text(label)
+                .font(.caption.bold())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(isSelected
+                    ? (value ? Color.green : Color.red).opacity(0.15)
+                    : Color(.systemGray5))
+                .foregroundStyle(isSelected
+                    ? (value ? Color.green : Color.red)
+                    : Color.secondary)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().strokeBorder(
+                        isSelected ? (value ? Color.green : Color.red).opacity(0.4) : Color.clear,
+                        lineWidth: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

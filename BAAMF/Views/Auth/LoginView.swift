@@ -9,10 +9,11 @@ struct LoginView: View {
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
+    @State private var inviteCode = ""
     @State private var showResetSheet = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case name, email, password }
+    private enum Field { case name, email, password, inviteCode }
 
     var body: some View {
         NavigationStack {
@@ -63,10 +64,26 @@ struct LoginView: View {
 
                         SecureField("Password", text: $password)
                             .focused($focusedField, equals: .password)
-                            .submitLabel(.go)
-                            .onSubmit { Task { await primaryAction() } }
+                            .submitLabel(isCreatingAccount ? .next : .go)
+                            .onSubmit {
+                                if isCreatingAccount { focusedField = .inviteCode }
+                                else { Task { await primaryAction() } }
+                            }
                             .padding()
                             .background(Color(.secondarySystemGroupedBackground))
+
+                        if isCreatingAccount {
+                            Divider().padding(.leading)
+
+                            TextField("Invite Code", text: $inviteCode)
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .focused($focusedField, equals: .inviteCode)
+                                .submitLabel(.go)
+                                .onSubmit { Task { await primaryAction() } }
+                                .padding()
+                                .background(Color(.secondarySystemGroupedBackground))
+                        }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
@@ -140,6 +157,7 @@ struct LoginView: View {
         if isCreatingAccount {
             return name.trimmingCharacters(in: .whitespaces).isEmpty
                 || email.isEmpty || password.isEmpty
+                || inviteCode.trimmingCharacters(in: .whitespaces).isEmpty
         }
         return email.isEmpty || password.isEmpty
     }
@@ -150,7 +168,8 @@ struct LoginView: View {
             await authViewModel.signUp(
                 name: name.trimmingCharacters(in: .whitespaces),
                 email: email,
-                password: password
+                password: password,
+                inviteCode: inviteCode
             )
         } else {
             await authViewModel.signIn(email: email, password: password)
@@ -165,6 +184,7 @@ struct LoginView: View {
         name = ""
         email = ""
         password = ""
+        inviteCode = ""
         focusedField = creating ? .name : .email
     }
 }

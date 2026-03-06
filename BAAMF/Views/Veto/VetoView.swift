@@ -254,20 +254,33 @@ struct VetoView: View {
 
     @ViewBuilder
     private func readItButton(_ book: Book) -> some View {
-        Button {
-            pendingReadItBookId = book.id
-        } label: {
+        if book.submitterId == currentUserId {
+            // Can't Read It your own submission — show a non-interactive label instead
             VStack(spacing: 3) {
-                Image(systemName: "book.closed")
+                Image(systemName: "person.fill")
                     .font(.subheadline)
-                Text("Read It")
+                Text("Your Pick")
                     .font(.caption2.bold())
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .foregroundStyle(.orange)
+            .foregroundStyle(.secondary)
+        } else {
+            Button {
+                pendingReadItBookId = book.id
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "book.closed")
+                        .font(.subheadline)
+                    Text("Read It")
+                        .font(.caption2.bold())
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(.orange)
+            }
+            .disabled(viewModel.isActing)
         }
-        .disabled(viewModel.isActing)
     }
 
     // MARK: - Hard Pass section

@@ -46,6 +46,10 @@ extension Notification.Name {
     /// Posted by EditCompletedMonthViewModel after a successful score save,
     /// so any listening VM (e.g. FavoriteBooksViewModel) can refresh.
     static let scoresDidUpdate = Notification.Name("scoresDidUpdate")
+
+    /// Posted by ProfilePictureViewModel after a successful photo upload,
+    /// so AuthViewModel reloads the member profile with the new photoURL.
+    static let profileDidUpdate = Notification.Name("profileDidUpdate")
 }
 
 // MARK: - View helpers

@@ -45,6 +45,17 @@ final class AuthViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Reload member profile after a successful profile picture upload
+        NotificationCenter.default.publisher(for: .profileDidUpdate)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let uid = self?.currentUserId else { return }
+                Task { @MainActor [weak self] in
+                    await self?.loadMemberProfile(uid: uid)
+                }
+            }
+            .store(in: &cancellables)
+
         // Persist the FCM token whenever the SDK rotates it
         NotificationCenter.default.publisher(for: .fcmTokenRefreshed)
             .compactMap { $0.object as? String }
@@ -85,23 +96,75 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    func signUp(name: String, email: String, password: String) async {
+    func signUp(name: String, email: String, password: String, inviteCode: String) async {
         isLoading = true
         errorMessage = nil
         do {
+            // ── 1. Validate invite code (pre-auth read) ───────────────────────
+            let normalizedCode = inviteCode.uppercased().trimmingCharacters(in: .whitespaces)
+            let codeSnap = try await firestoreService.inviteCodeRef(code: normalizedCode).getDocument()
+
+            guard codeSnap.exists,
+                  let data = codeSnap.data(),
+                  data["usedAt"] == nil,
+                  let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(),
+                  expiresAt > Date()
+            else {
+                errorMessage = inviteCodeError(codeSnap)
+                isLoading = false
+                return
+            }
+
+            // ── 2. Create Firebase Auth account ───────────────────────────────
             let uid = try await authService.createUser(email: email, password: password)
-            let data: [String: Any] = [
+
+            // ── 3. Batch-write user doc + mark code consumed ──────────────────
+            let batch = firestoreService.db.batch()
+
+            let userData: [String: Any] = [
                 "name": name,
                 "email": email,
                 "role": UserRole.member.rawValue,
                 "vetoCharges": []
             ]
-            try await firestoreService.userRef(uid: uid).setData(data)
+            batch.setData(userData, forDocument: firestoreService.userRef(uid: uid))
+
+            let codeUpdate: [String: Any] = [
+                "usedAt": Timestamp(date: Date()),
+                "usedBy": uid
+            ]
+            batch.updateData(codeUpdate, forDocument: firestoreService.inviteCodeRef(code: normalizedCode))
+
+            try await batch.commit()
             // authStateHandle fires automatically and loads the member profile
         } catch {
             errorMessage = friendlyAuthError(error)
             isLoading = false
         }
+    }
+
+    // MARK: - Invite code generation (admin only)
+
+    /// Generates a random 6-character invite code valid for 24 hours.
+    /// Returns the plaintext code on success so the caller can display/copy it.
+    func generateInviteCode() async throws -> String {
+        guard let uid = currentUserId else { throw AppError.permissionDenied }
+        let code = Self.randomCode()
+        let data: [String: Any] = [
+            "createdBy": uid,
+            "createdAt": Timestamp(date: Date()),
+            "expiresAt": Timestamp(date: Date().addingTimeInterval(24 * 3600)),
+            "usedAt":    NSNull(),
+            "usedBy":    NSNull()
+        ]
+        try await firestoreService.inviteCodeRef(code: code).setData(data)
+        return code
+    }
+
+    private static func randomCode(length: Int = 6) -> String {
+        // Unambiguous character set (no 0/O, 1/I)
+        let chars = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        return String((0..<length).map { _ in chars.randomElement()! })
     }
 
     // MARK: - Profile
@@ -123,6 +186,19 @@ final class AuthViewModel: ObservableObject {
     }
 
     // MARK: - Error formatting
+
+    private func inviteCodeError(_ snap: DocumentSnapshot) -> String {
+        guard snap.exists, let data = snap.data() else {
+            return "Invalid invite code. Please check the code and try again."
+        }
+        if data["usedAt"] != nil {
+            return "This invite code has already been used."
+        }
+        if let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(), expiresAt <= Date() {
+            return "This invite code has expired."
+        }
+        return "Invalid invite code."
+    }
 
     private func friendlyAuthError(_ error: Error) -> String {
         let code = (error as NSError).code

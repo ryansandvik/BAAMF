@@ -1,9 +1,11 @@
 import SwiftUI
 import Combine
+import PhotosUI
 
 // Typed navigation destination for Profile's NavigationStack.
 enum ProfileNavDestination: Hashable {
     case schedule
+    case adminSettings
 }
 
 /// Profile tab — visible to all members.
@@ -11,17 +13,19 @@ struct ProfileView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
 
     @State private var showLogHistoricalBook = false
+    @State private var generatedCode: String?
+    @State private var showCodeAlert = false
+    @State private var codeGenerationError: String?
+    @State private var isGeneratingCode = false
 
     var body: some View {
         List {
 
-            // MARK: User info
-            Section {
-                Label(
-                    authViewModel.currentMember?.name ?? "Member",
-                    systemImage: "person.circle.fill"
-                )
-                .foregroundStyle(.primary)
+            // MARK: User info + avatar
+            if let member = authViewModel.currentMember, let uid = member.id {
+                Section {
+                    AvatarHeaderRow(member: member, uid: uid)
+                }
             }
 
             // MARK: My Favourites
@@ -41,11 +45,38 @@ struct ProfileView: View {
                         Label("Manage Schedule", systemImage: "calendar.badge.plus")
                     }
 
+                    NavigationLink(value: ProfileNavDestination.adminSettings) {
+                        Label("Phase Deadlines", systemImage: "clock.badge.checkmark")
+                    }
+
                     Button {
                         showLogHistoricalBook = true
                     } label: {
                         Label("Log Historical Book", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
                     }
+
+                    Button {
+                        Task {
+                            isGeneratingCode = true
+                            do {
+                                generatedCode = try await authViewModel.generateInviteCode()
+                                showCodeAlert = true
+                            } catch {
+                                codeGenerationError = error.localizedDescription
+                                showCodeAlert = true
+                            }
+                            isGeneratingCode = false
+                        }
+                    } label: {
+                        HStack {
+                            Label("Generate Invite Code", systemImage: "person.badge.plus")
+                            if isGeneratingCode {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isGeneratingCode)
                 }
             }
 
@@ -63,10 +94,28 @@ struct ProfileView: View {
             switch destination {
             case .schedule:
                 ScheduleView()
+            case .adminSettings:
+                AdminSettingsView()
             }
         }
         .sheet(isPresented: $showLogHistoricalBook) {
             LogHistoricalBookView()
+        }
+        .alert(generatedCode != nil ? "Invite Code Ready" : "Error", isPresented: $showCodeAlert) {
+            if let code = generatedCode {
+                Button("Copy Code") {
+                    UIPasteboard.general.string = code
+                }
+                Button("Done", role: .cancel) {}
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: {
+            if let code = generatedCode {
+                Text("Share this code with the new member:\n\n\(code)\n\nExpires in 24 hours.")
+            } else if let error = codeGenerationError {
+                Text(error)
+            }
         }
     }
 }
@@ -233,6 +282,73 @@ private struct NotificationsSection: View {
             }
         }
         .task { viewModel.load() }
+    }
+}
+
+// MARK: - Avatar header row
+
+private struct AvatarHeaderRow: View {
+
+    let member: Member
+    let uid: String
+
+    @StateObject private var vm: ProfilePictureViewModel
+
+    init(member: Member, uid: String) {
+        self.member = member
+        self.uid = uid
+        _vm = StateObject(wrappedValue: ProfilePictureViewModel(uid: uid))
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PhotosPicker(
+                selection: $vm.selectedItem,
+                matching: .images,
+                photoLibrary: .shared()
+            ) {
+                ZStack(alignment: .bottomTrailing) {
+                    MemberAvatar(name: member.name, photoURL: member.photoURL, size: 60)
+
+                    if vm.isUploading {
+                        Circle()
+                            .fill(.black.opacity(0.4))
+                            .frame(width: 60, height: 60)
+                            .overlay(ProgressView().tint(.white))
+                    } else {
+                        Circle()
+                            .fill(Color(.systemBackground))
+                            .frame(width: 22, height: 22)
+                            .overlay(
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            )
+                            .shadow(radius: 1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.isUploading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(member.name)
+                    .font(.headline)
+                Text(member.email)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 6)
+        .alert("Upload Error", isPresented: Binding(
+            get: { vm.errorMessage != nil },
+            set: { if !$0 { vm.errorMessage = nil } }
+        )) {
+            Button("OK") { vm.errorMessage = nil }
+        } message: {
+            Text(vm.errorMessage ?? "")
+        }
     }
 }
 

@@ -392,7 +392,8 @@ private struct RequestSwapSheet: View {
                 Section {
                     Picker("Member", selection: $targetMemberId) {
                         Text("Select a member…").tag("")
-                        ForEach(viewModel.allMembers.filter { $0.id != requesterId }) { member in
+                        // Virtual members are excluded — they're not in the host rotation.
+                        ForEach(viewModel.allMembers.filter { $0.id != requesterId && !$0.isVirtual }) { member in
                             Text(member.name).tag(member.id ?? "")
                         }
                     }
