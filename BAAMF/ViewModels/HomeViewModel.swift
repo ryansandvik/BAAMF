@@ -31,9 +31,14 @@ final class HomeViewModel: ObservableObject {
     private var booksListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
 
+    /// Stored so snapshot callbacks can pass it to CalendarService without
+    /// capturing the call-site parameter in long-lived closures.
+    private var currentUserId: String = ""
+
     // MARK: - Lifecycle
 
     func start(currentUserId: String) {
+        self.currentUserId = currentUserId
         isLoading = true
         let ids = Self.adjacentMonthIds()
         startPreviousMonthListener(monthId: ids.previous)
@@ -93,7 +98,10 @@ final class HomeViewModel: ObservableObject {
                     // Only surface it if it's not yet complete — complete months
                     // leave home when the calendar rolls over.
                     self.previousMonth = (month?.status != .complete) ? month : nil
-                    if let month { Task { await CalendarService.shared.syncEvent(for: month) } }
+                    if let month {
+                        let uid = self.currentUserId
+                        Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
+                    }
                 }
             }
     }
@@ -113,7 +121,8 @@ final class HomeViewModel: ObservableObject {
                         self.startBooksListener(monthId: monthId)
                     }
                     if let month = self.currentMonth {
-                        Task { await CalendarService.shared.syncEvent(for: month) }
+                        let uid = self.currentUserId
+                        Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
                     }
                 }
             }
@@ -126,7 +135,8 @@ final class HomeViewModel: ObservableObject {
                     guard let self else { return }
                     self.nextMonth = try? snapshot?.data(as: ClubMonth.self)
                     if let month = self.nextMonth {
-                        Task { await CalendarService.shared.syncEvent(for: month) }
+                        let uid = self.currentUserId
+                        Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
                     }
                 }
             }

@@ -19,6 +19,10 @@ final class HostSetupViewModel: ObservableObject {
     }()
     @Published var eventLocation = ""
     @Published var eventNotes = ""
+    /// Deadline for the submissions phase. Defaults to 7 days from now.
+    /// Ignored (and cleared) when submissionMode is .pick4.
+    @Published var submissionDeadline: Date = Calendar.current.date(
+        byAdding: .day, value: 7, to: Date()) ?? Date()
 
     // MARK: - Async state
 
@@ -62,8 +66,11 @@ final class HostSetupViewModel: ObservableObject {
                 ?? Calendar.current.date(byAdding: .hour, value: 2, to: start)
                 ?? start
         }
-        eventLocation = month.eventLocation ?? ""
-        eventNotes    = month.eventNotes ?? ""
+        eventLocation      = month.eventLocation ?? ""
+        eventNotes         = month.eventNotes ?? ""
+        submissionDeadline = month.submissionDeadline
+            ?? Calendar.current.date(byAdding: .day, value: 7, to: Date())
+            ?? Date()
 
         // Snapshot original values so hasUnsavedChanges starts false
         originalSubmissionMode  = submissionMode
@@ -163,6 +170,13 @@ final class HostSetupViewModel: ObservableObject {
 
         let notes = eventNotes.trimmingCharacters(in: .whitespaces)
         data["eventNotes"] = notes.isEmpty ? FieldValue.delete() : notes
+
+        // Submission deadline — set for open/theme, cleared for pick-4
+        if submissionMode != .pick4 {
+            data["submissionDeadline"] = Timestamp(date: submissionDeadline)
+        } else {
+            data["submissionDeadline"] = FieldValue.delete()
+        }
 
         do {
             try await db.monthRef(monthId: monthId).updateData(data)

@@ -163,6 +163,7 @@ struct LoginView: View {
     }
 
     private func primaryAction() async {
+        guard !isPrimaryButtonDisabled else { return }
         focusedField = nil
         if isCreatingAccount {
             await authViewModel.signUp(

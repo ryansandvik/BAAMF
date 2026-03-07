@@ -153,9 +153,10 @@ final class AuthViewModel: ObservableObject {
         let data: [String: Any] = [
             "createdBy": uid,
             "createdAt": Timestamp(date: Date()),
-            "expiresAt": Timestamp(date: Date().addingTimeInterval(24 * 3600)),
-            "usedAt":    NSNull(),
-            "usedBy":    NSNull()
+            "expiresAt": Timestamp(date: Date().addingTimeInterval(24 * 3600))
+            // usedAt / usedBy intentionally omitted — absence means unused.
+            // Writing NSNull() here causes data["usedAt"] != nil on read, which
+            // makes every freshly generated code appear already consumed.
         ]
         try await firestoreService.inviteCodeRef(code: code).setData(data)
         return code

@@ -11,6 +11,9 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @State private var showCreateMonth = false
     @State private var managingMonth: ClubMonth? = nil
+    /// Drives the replacement BookSearchView via navigationDestination (lifted out of LazyVStack
+    /// to avoid the blank-screen bug with closure-based NavigationLink in lazy containers).
+    @State private var replacementSearchMonth: ClubMonth? = nil
 
     var body: some View {
         Group {
@@ -44,6 +47,10 @@ struct HomeView: View {
         .sheet(item: $managingMonth) { month in
             MonthManagementView(month: month)
                 .environmentObject(authViewModel)
+        }
+        // Replacement search — lifted out of LazyVStack to prevent blank-screen bug.
+        .navigationDestination(item: $replacementSearchMonth) { m in
+            BookSearchView(month: m, onSubmitted: { replacementSearchMonth = nil })
         }
     }
 
@@ -275,8 +282,8 @@ struct HomeView: View {
             }
 
             if needsReplacement {
-                NavigationLink {
-                    BookSearchView(month: month, onSubmitted: {})
+                Button {
+                    replacementSearchMonth = month
                 } label: {
                     Text("Submit Replacement →")
                         .font(.footnote.bold())
@@ -629,6 +636,8 @@ private struct AttendanceSection: View {
         } label: {
             Text(label)
                 .font(.caption.bold())
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 .background(isSelected

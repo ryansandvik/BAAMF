@@ -17,6 +17,14 @@ struct VetoView: View {
     /// Set true when the user taps "No Thanks" on the replacement banner.
     /// Session-only — the banner reappears on next launch if they still need to resubmit.
     @State private var replacementBannerDismissed = false
+    /// Set true when the user confirms they're done reviewing and have no vetoes to cast.
+    /// Session-only dismissal of the "okay with selections" prompt.
+    @State private var acceptedSelections = false
+    /// Drives the replacement BookSearchView via navigationDestination (lifted out of
+    /// LazyVStack to avoid the blank-screen bug with closure-based NavigationLink in lazy contexts).
+    @State private var showingReplacementSearch = false
+    /// Shows the Hard Pass explanation sheet.
+    @State private var showHardPassInfo = false
 
     private var currentUserId: String { authViewModel.currentUserId ?? "" }
 
@@ -61,6 +69,15 @@ struct VetoView: View {
             Button("OK") { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        // Replacement search — lifted out of LazyVStack to avoid the blank-screen bug
+        // that occurs when closure-based NavigationLink is used inside a lazy container.
+        .navigationDestination(isPresented: $showingReplacementSearch) {
+            BookSearchView(month: month, onSubmitted: {})
+        }
+        // Hard Pass info sheet
+        .sheet(isPresented: $showHardPassInfo) {
+            hardPassInfoSheet
         }
         // Read It confirmation
         .confirmationDialog(
@@ -133,6 +150,13 @@ struct VetoView: View {
                         removedSection
                     }
 
+                    // "Okay with selections" — lets members signal they've reviewed
+                    // the veto window without needing to take any action.
+                    if !acceptedSelections && !viewModel.eligibleBooks.isEmpty {
+                        okayWithSelectionsCard
+                    } else if acceptedSelections {
+                        acceptedConfirmation
+                    }
                 }
             }
             .padding(.vertical, 12)
@@ -157,8 +181,8 @@ struct VetoView: View {
             }
 
             HStack(spacing: 12) {
-                NavigationLink {
-                    BookSearchView(month: month, onSubmitted: {})
+                Button {
+                    showingReplacementSearch = true
                 } label: {
                     Text("Submit Replacement")
                         .font(.footnote.bold())
@@ -190,33 +214,42 @@ struct VetoView: View {
     // MARK: - Charges header
 
     private var chargesHeader: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "bolt.shield")
-                .font(.title3)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Your Hard Pass Charges")
-                    .font(.footnote.bold())
-                HStack(spacing: 4) {
-                    ForEach(0..<K.Veto.maxCharges, id: \.self) { i in
-                        Image(systemName: i < availableCharges ? "circle.fill" : "circle")
+        Button {
+            showHardPassInfo = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bolt.shield")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your Hard Pass Charges")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 4) {
+                        ForEach(0..<K.Veto.maxCharges, id: \.self) { i in
+                            Image(systemName: i < availableCharges ? "circle.fill" : "circle")
+                                .font(.caption)
+                                .foregroundStyle(i < availableCharges ? Color.accentColor : Color.secondary)
+                        }
+                        Text(availableCharges == 0
+                             ? "No charges available"
+                             : "\(availableCharges) of \(K.Veto.maxCharges) available")
                             .font(.caption)
-                            .foregroundStyle(i < availableCharges ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(.secondary)
                     }
-                    Text(availableCharges == 0
-                         ? "No charges available"
-                         : "\(availableCharges) of \(K.Veto.maxCharges) available")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let next = nextChargeDate {
+                        Text("Next charge available: \(next.formatted(.dateTime.month(.wide).year()))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                if let next = nextChargeDate {
-                    Text("Next charge available: \(next.formatted(.dateTime.month(.wide).year()))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                Spacer()
+                Image(systemName: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
             }
-            Spacer()
         }
+        .buttonStyle(.plain)
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -362,6 +395,155 @@ struct VetoView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    // MARK: - Hard Pass info sheet
+
+    private var hardPassInfoSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+
+                    // Current status
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Your Charges")
+                            .font(.headline)
+                        HStack(spacing: 8) {
+                            ForEach(0..<K.Veto.maxCharges, id: \.self) { i in
+                                Image(systemName: i < availableCharges ? "bolt.shield.fill" : "bolt.shield")
+                                    .font(.title2)
+                                    .foregroundStyle(i < availableCharges ? Color.accentColor : Color.secondary.opacity(0.4))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(availableCharges == 0 ? "No charges available" : "\(availableCharges) of \(K.Veto.maxCharges) available")
+                                    .font(.subheadline.bold())
+                                if let next = nextChargeDate {
+                                    Text("Refreshes \(next.formatted(.dateTime.month(.wide).year()))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    // How it works
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("How Hard Pass Works")
+                            .font(.headline)
+
+                        infoRow(icon: "bolt.shield.fill", color: .red,
+                                title: "Cast a Hard Pass",
+                                body: "Tap Hard Pass on any book you strongly don't want to read. You'll use 1 charge.")
+
+                        infoRow(icon: "person.3.fill", color: .orange,
+                                title: "Threshold (\(threshold) of \(allMembers.count) members)",
+                                body: "If \(threshold) or more members Hard Pass the same book, it receives a \u{2212}2 vote penalty in Round 1. The book stays in voting — it's just harder to win.")
+
+                        infoRow(icon: "calendar.badge.clock", color: .teal,
+                                title: "12-Month Cooldown",
+                                body: "Each charge cools down for 12 months, counted from the first of the month you used it. A charge used in March 2025 is available again March 1, 2026.")
+
+                        infoRow(icon: "arrow.clockwise", color: .blue,
+                                title: "Maximum \(K.Veto.maxCharges) Charges",
+                                body: "You can hold up to \(K.Veto.maxCharges) charges at once. Unused charges carry over month to month, so saving them gives you more flexibility later.")
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding()
+            }
+            .navigationTitle("Hard Pass")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showHardPassInfo = false }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func infoRow(icon: String, color: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.bold())
+                Text(body)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - Okay with selections
+
+    private var okayWithSelectionsCard: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No Vetoes?")
+                        .font(.footnote.bold())
+                    Text("Tap below to confirm you're happy with the current selections.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    acceptedSelections = true
+                }
+            } label: {
+                Text("I'm okay with these selections")
+                    .font(.footnote.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+            }
+            .disabled(viewModel.isActing)
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    private var acceptedConfirmation: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text("You're all set — no vetoes cast.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+        .transition(.opacity)
     }
 
     // MARK: - Actions

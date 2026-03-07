@@ -1,4 +1,4 @@
-# BAAMF v1.1 — TestFlight
+# BAAMF v1.0.3 — TestFlight
 
 Thanks for testing! Here's what's new.
 

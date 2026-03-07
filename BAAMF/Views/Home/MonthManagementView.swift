@@ -252,6 +252,15 @@ struct MonthManagementView: View {
             }
             .navigationTitle("Advance to \(targetStatus?.displayName ?? "")")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                // Re-apply the admin default once settings have loaded.
+                // This closes the race window where the host taps Advance
+                // before settingsVM.load() has completed.
+                if let ts = targetStatus,
+                   let adminDefault = settingsVM.settings.defaultDeadline(for: ts) {
+                    proposedDeadline = adminDefault
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -319,8 +328,12 @@ struct MonthManagementView: View {
                     }
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
         }
+        // Remove List's default row insets so the ScrollView spans the full cell
+        // width and isn't clipped. Padding is re-applied inside the content above.
+        .listRowInsets(EdgeInsets())
     }
 
     private func phaseShortName(_ status: MonthStatus) -> String {

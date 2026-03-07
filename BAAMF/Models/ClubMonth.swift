@@ -3,7 +3,7 @@ import FirebaseFirestore
 
 // MARK: - Enums
 
-enum MonthStatus: String, Codable, CaseIterable {
+enum MonthStatus: String, Codable, CaseIterable, Hashable {
     case setup
     case submissions
     case vetoes
@@ -27,7 +27,7 @@ enum MonthStatus: String, Codable, CaseIterable {
     }
 }
 
-enum SubmissionMode: String, Codable {
+enum SubmissionMode: String, Codable, Hashable {
     case open
     case theme
     case pick4
@@ -56,7 +56,7 @@ enum SubmissionMode: String, Codable {
 
 /// Represents one monthly book club cycle (maps to Firestore `months/{monthId}`).
 /// The document ID format is "YYYY-MM" (e.g. "2026-03").
-struct ClubMonth: Identifiable, Codable, Equatable {
+struct ClubMonth: Identifiable, Codable, Equatable, Hashable {
     @DocumentID var id: String?
 
     var year: Int

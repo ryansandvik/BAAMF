@@ -97,7 +97,7 @@ struct CoverImage: View {
     var body: some View {
         Group {
             if let urlString = url, let imageURL = URL(string: urlString) {
-                AsyncImage(url: imageURL) { phase in
+                CachedAsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()

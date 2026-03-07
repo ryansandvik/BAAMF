@@ -9,6 +9,7 @@ struct HostSetupView: View {
     let month: ClubMonth
 
     @StateObject private var viewModel = HostSetupViewModel()
+    @StateObject private var settingsVM = AppSettingsViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -41,14 +42,32 @@ struct HostSetupView: View {
             Section("Event Details (Optional)") {
                 Toggle("Set event date", isOn: $viewModel.hasEventDate.animation())
                 if viewModel.hasEventDate {
-                    DatePicker("Date & Time",
+                    DatePicker("Start",
                                selection: $viewModel.eventDate,
+                               displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("End",
+                               selection: $viewModel.eventEndDate,
+                               in: viewModel.eventDate...,
                                displayedComponents: [.date, .hourAndMinute])
                 }
                 TextField("Location", text: $viewModel.eventLocation)
                     .autocorrectionDisabled()
                 TextField("Notes", text: $viewModel.eventNotes, axis: .vertical)
                     .lineLimit(3, reservesSpace: false)
+            }
+
+            // MARK: Submission Deadline (not applicable to host pick-4)
+            if viewModel.submissionMode != .pick4 {
+                Section {
+                    DatePicker("Closes",
+                               selection: $viewModel.submissionDeadline,
+                               in: Date()...,
+                               displayedComponents: [.date, .hourAndMinute])
+                } header: {
+                    Text("Submission Deadline")
+                } footer: {
+                    Text("Members get a push notification 1 hour before and the phase advances automatically when the deadline passes.")
+                }
             }
 
             // MARK: Error
@@ -72,6 +91,15 @@ struct HostSetupView: View {
             }
         }
         .onAppear { viewModel.load(from: month) }
+        .task {
+            // Load admin-configured defaults and apply them to the submission
+            // deadline if the month doesn't already have one stored.
+            await settingsVM.load()
+            if month.submissionDeadline == nil,
+               let adminDefault = settingsVM.settings.defaultDeadline(for: .submissions) {
+                viewModel.submissionDeadline = adminDefault
+            }
+        }
         .onChange(of: viewModel.savedSuccessfully) { _, success in
             if success { dismiss() }
         }

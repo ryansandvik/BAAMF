@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseFirestore
 import FirebaseMessaging
 import UserNotifications
 import UIKit
@@ -84,6 +85,30 @@ struct BAAMFApp: App {
 
     init() {
         FirebaseApp.configure()
+        configureURLCache()
+        configureFirestore()
+    }
+
+    /// Expand the shared URL cache so profile photos and book covers have more
+    /// room before the OS evicts them. This is a second caching layer beneath
+    /// ImageCache — it handles URLs with valid HTTP cache headers at the OS level.
+    private func configureURLCache() {
+        URLCache.shared = URLCache(
+            memoryCapacity: 50 * 1024 * 1024,   // 50 MB RAM
+            diskCapacity:  200 * 1024 * 1024,   // 200 MB on disk
+            diskPath: "com.baamf.urlcache"
+        )
+    }
+
+    /// Explicitly enable Firestore offline persistence with a generous cache
+    /// budget. The default is 100 MB; 200 MB reduces mid-session evictions for
+    /// larger clubs. Must be called before the first Firestore.firestore() use.
+    private func configureFirestore() {
+        let settings = FirestoreSettings()
+        settings.cacheSettings = PersistentCacheSettings(
+            sizeBytes: NSNumber(value: 200 * 1024 * 1024)
+        )
+        Firestore.firestore().settings = settings
     }
 
     var body: some Scene {
