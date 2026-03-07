@@ -247,7 +247,9 @@ actor CalendarService {
 
     private func requestWriteAccess() async -> Bool {
         if #available(iOS 17.0, *) {
-            return (try? await store.requestWriteOnlyAccessToEvents()) ?? false
+            // Full access is required — write-only blocks store.event(withIdentifier:)
+            // and store.events(matching:), making duplicate detection impossible.
+            return (try? await store.requestFullAccessToEvents()) ?? false
         } else {
             return await withCheckedContinuation { continuation in
                 store.requestAccess(to: .event) { granted, _ in

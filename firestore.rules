@@ -90,7 +90,8 @@ service cloud.firestore {
                            isAuth() &&
                            request.resource.data.diff(resource.data)
                              .affectedKeys()
-                             .hasOnly(['isRemovedByVeto', 'vetoType2Voters', 'vetoType2Penalty'])
+                             .hasOnly(['isRemovedByVeto', 'vetoType2Voters', 'vetoType2Penalty',
+                                       'votingR1Voters', 'votingR2Voters'])
                          );
         allow delete: if isAdmin()
                       || isMonthHost(monthId)
@@ -112,9 +113,10 @@ service cloud.firestore {
       }
 
       // Attendance — any member can read; members write only their own RSVP.
+      // Admins can write any member's record (needed for history view backfill).
       match /attendance/{userId} {
         allow read:  if isAuth();
-        allow write: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId || isAdmin();
       }
     }
   }

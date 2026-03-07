@@ -2,17 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<key>CFBundleIconFile</key>
+	<string>BAAMFIcon</string>
 	<key>GOOGLE_BOOKS_API_KEY</key>
 	<string>$(GOOGLE_BOOKS_API_KEY)</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>BAAMF adds your book club events to your calendar and keeps them up to date when the host changes the date, time, or location. Full access is needed to avoid creating duplicate events.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<key>NSCalendarsWriteOnlyUsageDescription</key>
-	<string>BAAMF adds your book club events to your calendar and keeps them up to date when the host changes the date, time, or location.</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>BAAMF adds your book club events to your calendar and keeps them up to date when the host changes the date, time, or location.</string>
 </dict>
 </plist>

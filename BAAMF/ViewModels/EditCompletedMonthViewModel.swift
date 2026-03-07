@@ -17,6 +17,8 @@ final class EditCompletedMonthViewModel: ObservableObject {
     @Published private(set) var allMembers: [Member] = []
     @Published var memberScores: [String: Double] = [:]
     @Published var participating: Set<String> = []
+    /// Empty string means "unknown / not recorded".
+    @Published var selectedSubmitterId: String = ""
 
     @Published private(set) var isLoading = true
     @Published private(set) var isSaving = false
@@ -42,6 +44,9 @@ final class EditCompletedMonthViewModel: ObservableObject {
                 let (loadedMembers, loadedScores) = try await (members, scores)
 
                 allMembers = loadedMembers.sorted { $0.name < $1.name }
+
+                // Seed submitter from the month document
+                selectedSubmitterId = month.selectedBookSubmitterId ?? ""
 
                 // Seed current values from existing score docs
                 for score in loadedScores {
@@ -113,9 +118,14 @@ final class EditCompletedMonthViewModel: ObservableObject {
                     return total / Double(participatingScores.count)
                 }()
 
-                let monthUpdate: [String: Any] = [
+                var monthUpdate: [String: Any] = [
                     "groupAvgScore": groupAvg as Any
                 ]
+                if selectedSubmitterId.isEmpty {
+                    monthUpdate["selectedBookSubmitterId"] = FieldValue.delete()
+                } else {
+                    monthUpdate["selectedBookSubmitterId"] = selectedSubmitterId
+                }
                 batch.updateData(monthUpdate, forDocument: db.monthRef(monthId: monthId))
 
                 try await batch.commit()

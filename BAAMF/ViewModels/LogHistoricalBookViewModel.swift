@@ -19,6 +19,8 @@ final class LogHistoricalBookViewModel: ObservableObject {
     @Published var selectedMonth: Int = 1
 
     @Published var selectedHostId: String = ""
+    /// Empty string means "unknown / not recorded".
+    @Published var selectedSubmitterId: String = ""
 
     // Book
     @Published var bookTitle: String = ""
@@ -169,6 +171,9 @@ final class LogHistoricalBookViewModel: ObservableObject {
                 ]
                 if !bookCoverUrl.isEmpty {
                     monthData["selectedBookCoverUrl"] = bookCoverUrl
+                }
+                if !selectedSubmitterId.isEmpty {
+                    monthData["selectedBookSubmitterId"] = selectedSubmitterId
                 }
                 batch.setData(monthData, forDocument: db.monthRef(monthId: monthId))
 

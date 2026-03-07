@@ -22,7 +22,7 @@ struct EditCompletedMonthView: View {
                     form
                 }
             }
-            .navigationTitle("Edit Scores")
+            .navigationTitle("Edit Month")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .alert("Error", isPresented: Binding(
@@ -46,6 +46,7 @@ struct EditCompletedMonthView: View {
         Form {
             // Month context header
             Section {
+
                 HStack(spacing: 12) {
                     if let coverUrl = viewModel.month.selectedBookCoverUrl {
                         CoverImage(url: coverUrl, size: 50)
@@ -63,6 +64,20 @@ struct EditCompletedMonthView: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+
+            // Submitter
+            Section {
+                Picker("Submitter", selection: $viewModel.selectedSubmitterId) {
+                    Text("Unknown").tag("")
+                    ForEach(viewModel.allMembers) { member in
+                        Text(member.name).tag(member.id ?? "")
+                    }
+                }
+            } header: {
+                Text("Submitter")
+            } footer: {
+                Text("The member who originally pitched this book.")
             }
 
             // Score rows

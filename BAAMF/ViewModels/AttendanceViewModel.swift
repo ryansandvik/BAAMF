@@ -64,4 +64,13 @@ final class AttendanceViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    /// Removes a member's attendance record entirely (used by admins to clear a selection).
+    func clearAttendance(uid: String) async {
+        do {
+            try await db.attendanceDocRef(monthId: monthId, uid: uid).delete()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }

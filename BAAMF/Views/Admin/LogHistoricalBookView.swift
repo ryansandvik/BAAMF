@@ -47,6 +47,7 @@ struct LogHistoricalBookView: View {
         Form {
             monthSection
             hostSection
+            submitterSection
             bookSection
             scoresSection
         }
@@ -85,6 +86,23 @@ struct LogHistoricalBookView: View {
                     Text(member.name).tag(member.id ?? "")
                 }
             }
+        }
+    }
+
+    // MARK: - Submitter section
+
+    private var submitterSection: some View {
+        Section {
+            Picker("Submitter", selection: $viewModel.selectedSubmitterId) {
+                Text("Unknown").tag("")
+                ForEach(viewModel.allMembers) { member in
+                    Text(member.name).tag(member.id ?? "")
+                }
+            }
+        } header: {
+            Text("Submitter")
+        } footer: {
+            Text("The member who originally pitched this book. Leave as Unknown if not recorded.")
         }
     }
 

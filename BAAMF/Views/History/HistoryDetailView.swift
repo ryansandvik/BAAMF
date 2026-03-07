@@ -14,7 +14,7 @@ struct HistoryDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var listener: ListenerRegistration?
-    @State private var showEditScores = false
+    @State private var showEditMonth = false
 
     private let db = FirestoreService.shared
 
@@ -39,14 +39,14 @@ struct HistoryDetailView: View {
             if isAdmin {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        showEditScores = true
+                        showEditMonth = true
                     } label: {
-                        Label("Edit Scores", systemImage: "square.and.pencil")
+                        Label("Edit Month", systemImage: "square.and.pencil")
                     }
                 }
             }
         }
-        .sheet(isPresented: $showEditScores) {
+        .sheet(isPresented: $showEditMonth) {
             EditCompletedMonthView(month: month)
         }
         .alert("Error", isPresented: Binding(
@@ -66,10 +66,15 @@ struct HistoryDetailView: View {
             VStack(spacing: 20) {
                 bookCard
                 if hasEventDetails { eventCard }
-                if let monthId = month.id {
-                    AttendanceCard(monthId: monthId, allMembers: allMembers, currentUserId: currentUserId)
-                }
                 scoresCard
+                if let monthId = month.id {
+                    AttendanceCard(
+                        monthId: monthId,
+                        allMembers: allMembers,
+                        currentUserId: currentUserId,
+                        isAdmin: isAdmin
+                    )
+                }
             }
             .padding()
         }
@@ -183,6 +188,8 @@ struct HistoryDetailView: View {
             Text("Scores")
                 .font(.footnote.bold())
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
                 .padding(.horizontal)
                 .padding(.top, 14)
                 .padding(.bottom, 10)
@@ -190,7 +197,8 @@ struct HistoryDetailView: View {
             Divider().padding(.horizontal)
 
             ForEach(scoredMembers) { row in
-                HStack {
+                HStack(spacing: 10) {
+                    MemberAvatar(name: row.name, photoURL: row.avatarUrl, size: 32)
                     Text(row.name)
                         .font(.body)
                     Spacer()
@@ -242,6 +250,7 @@ struct HistoryDetailView: View {
     private struct MemberScoreRow: Identifiable {
         let id: String
         let name: String
+        let avatarUrl: String?
         let score: Double?
     }
 
@@ -249,7 +258,7 @@ struct HistoryDetailView: View {
         allMembers.map { member in
             let memberId = member.id ?? ""
             let score = scores.first { $0.scorerId == memberId }?.score
-            return MemberScoreRow(id: memberId, name: member.name, score: score)
+            return MemberScoreRow(id: memberId, name: member.name, avatarUrl: member.photoURL, score: score)
         }
         .sorted { ($0.score ?? -1) > ($1.score ?? -1) }
     }
@@ -283,14 +292,16 @@ private struct AttendanceCard: View {
     let monthId: String
     let allMembers: [Member]
     let currentUserId: String
+    let isAdmin: Bool
 
     @StateObject private var vm: AttendanceViewModel
     @State private var showRoster = false
 
-    init(monthId: String, allMembers: [Member], currentUserId: String) {
+    init(monthId: String, allMembers: [Member], currentUserId: String, isAdmin: Bool) {
         self.monthId = monthId
         self.allMembers = allMembers
         self.currentUserId = currentUserId
+        self.isAdmin = isAdmin
         _vm = StateObject(wrappedValue: AttendanceViewModel(monthId: monthId))
     }
 
@@ -304,10 +315,9 @@ private struct AttendanceCard: View {
                     .textCase(.uppercase)
                     .tracking(0.5)
 
-                // Tappable count pill
                 if vm.attendingCount > 0 || vm.notAttendingCount > 0 {
                     Button { showRoster = true } label: {
-                        Text("\(vm.attendingCount) going")
+                        Text("\(vm.attendingCount) attended")
                             .font(.caption2.bold())
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -320,7 +330,6 @@ private struct AttendanceCard: View {
 
                 Spacer()
 
-                // Roster icon
                 Button { showRoster = true } label: {
                     Image(systemName: "person.2")
                         .font(.footnote)
@@ -328,12 +337,6 @@ private struct AttendanceCard: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 4)
-
-                // Current user's quick toggle
-                HStack(spacing: 6) {
-                    rsvpButton(label: "Going",    value: true,  color: .green)
-                    rsvpButton(label: "Not going", value: false, color: .red)
-                }
             }
             .padding(.horizontal)
             .padding(.top, 14)
@@ -343,11 +346,16 @@ private struct AttendanceCard: View {
 
             // Member rows
             ForEach(sortedRows, id: \.id) { row in
-                HStack {
+                HStack(spacing: 10) {
+                    MemberAvatar(name: row.name, photoURL: row.avatarUrl, size: 32)
                     Text(row.name)
                         .font(.body)
                     Spacer()
-                    attendanceLabel(for: row.status)
+                    if isAdmin {
+                        adminToggle(for: row)
+                    } else {
+                        attendanceLabel(for: row.status)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 10)
@@ -366,56 +374,29 @@ private struct AttendanceCard: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private struct MemberAttendanceRow: Identifiable {
-        let id: String
-        let name: String
-        let status: Bool?   // true = going, false = not going, nil = no response
-    }
-
-    private var sortedRows: [MemberAttendanceRow] {
-        allMembers
-            .map { member in
-                let memberId = member.id ?? ""
-                let status = vm.records.first { $0.id == memberId }?.attending
-                return MemberAttendanceRow(id: memberId, name: member.name, status: status)
-            }
-            // Sort: going first, then not going, then no response; alphabetical within each group
-            .sorted {
-                switch ($0.status, $1.status) {
-                case (true, true):   return $0.name < $1.name
-                case (true, _):      return true
-                case (false, false): return $0.name < $1.name
-                case (false, nil):   return true
-                default:             return $0.name < $1.name
-                }
-            }
-    }
+    // MARK: - Admin per-row toggle
 
     @ViewBuilder
-    private func attendanceLabel(for status: Bool?) -> some View {
-        switch status {
-        case true:
-            Label("Going", systemImage: "checkmark.circle.fill")
-                .font(.caption.bold())
-                .foregroundStyle(.green)
-        case false:
-            Label("Not going", systemImage: "xmark.circle.fill")
-                .font(.caption.bold())
-                .foregroundStyle(.red)
-        case nil:
-            Text("No response")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+    private func adminToggle(for row: MemberAttendanceRow) -> some View {
+        HStack(spacing: 6) {
+            attendanceButton(label: "Attended",  value: true,  current: row.status, memberId: row.id)
+            attendanceButton(label: "Didn't",    value: false, current: row.status, memberId: row.id)
         }
     }
 
     @ViewBuilder
-    private func rsvpButton(label: String, value: Bool, color: Color) -> some View {
-        let isSelected = vm.currentUserStatus(uid: currentUserId) == value
+    private func attendanceButton(label: String, value: Bool, current: Bool?, memberId: String) -> some View {
+        let isSelected = current == value
+        let color: Color = value ? .green : .red
         Button {
-            Task { await vm.setAttendance(attending: value, uid: currentUserId) }
+            Task {
+                if isSelected {
+                    // Tapping the active selection clears the record
+                    await vm.clearAttendance(uid: memberId)
+                } else {
+                    await vm.setAttendance(attending: value, uid: memberId)
+                }
+            }
         } label: {
             Text(label)
                 .font(.caption.bold())
@@ -427,5 +408,52 @@ private struct AttendanceCard: View {
                 .overlay(Capsule().strokeBorder(isSelected ? color.opacity(0.4) : Color.clear, lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Read-only label (non-admins)
+
+    @ViewBuilder
+    private func attendanceLabel(for status: Bool?) -> some View {
+        switch status {
+        case true:
+            Label("Attended", systemImage: "checkmark.circle.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.green)
+        case false:
+            Label("Didn't attend", systemImage: "xmark.circle.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.red)
+        case nil:
+            Text("No response")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: - Row model
+
+    private struct MemberAttendanceRow: Identifiable {
+        let id: String
+        let name: String
+        let avatarUrl: String?
+        let status: Bool?
+    }
+
+    private var sortedRows: [MemberAttendanceRow] {
+        allMembers
+            .map { member in
+                let memberId = member.id ?? ""
+                let status = vm.records.first { $0.id == memberId }?.attending
+                return MemberAttendanceRow(id: memberId, name: member.name, avatarUrl: member.photoURL, status: status)
+            }
+            .sorted {
+                switch ($0.status, $1.status) {
+                case (true,  true):  return $0.name < $1.name
+                case (true,  _):     return true
+                case (false, false): return $0.name < $1.name
+                case (false, nil):   return true
+                default:             return $0.name < $1.name
+                }
+            }
     }
 }
