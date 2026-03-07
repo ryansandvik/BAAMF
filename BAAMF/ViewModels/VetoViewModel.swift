@@ -214,8 +214,14 @@ final class VetoViewModel: ObservableObject {
         isActing = true
         errorMessage = nil
         do {
-            try await db.monthRef(monthId: monthId)
-                .updateData(["status": MonthStatus.votingR1.rawValue])
+            var update: [String: Any] = ["status": MonthStatus.votingR1.rawValue]
+            // Read the default R1 deadline from AppSettings so the notification
+            // and the app always show the same date.
+            if let settings = try? await db.settingsRef().getDocument().data(as: AppSettings.self),
+               let deadline = settings.defaultDeadline(for: .votingR1) {
+                update["votingR1Deadline"] = Timestamp(date: deadline)
+            }
+            try await db.monthRef(monthId: monthId).updateData(update)
             advancedSuccessfully = true
         } catch {
             errorMessage = error.localizedDescription

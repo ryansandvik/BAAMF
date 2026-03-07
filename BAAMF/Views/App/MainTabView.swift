@@ -4,6 +4,7 @@ import Combine
 struct MainTabView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @ObservedObject private var badges = BadgeService.shared
 
     @State private var selectedTab = 0
 
@@ -23,6 +24,7 @@ struct MainTabView: View {
             .tabItem {
                 Label("Home", systemImage: "house.fill")
             }
+            .badge(badges.badgeCount)
 
             // History — past months + scores
             NavigationStack(path: $historyPath) {
@@ -57,6 +59,15 @@ struct MainTabView: View {
             if newTab != 1 { historyPath  = NavigationPath() }
             if newTab != 2 { schedulePath = NavigationPath() }
             if newTab != 3 { profilePath  = NavigationPath() }
+        }
+        // Start badge listener on sign-in, stop on sign-out.
+        .task {
+            if let uid = authViewModel.currentUserId {
+                BadgeService.shared.start(userId: uid)
+            }
+        }
+        .onDisappear {
+            BadgeService.shared.stop()
         }
     }
 }

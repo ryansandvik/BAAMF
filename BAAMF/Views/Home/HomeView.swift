@@ -194,8 +194,9 @@ struct HomeView: View {
 
     @ViewBuilder
     private func setupContent(_ month: ClubMonth) -> some View {
-        let isHostOrAdmin = (authViewModel.currentUserId ?? "") == month.hostId
-            || authViewModel.isAdmin
+        let currentUserId = authViewModel.currentUserId ?? ""
+        let isHost        = currentUserId == month.hostId
+        let isAdminOnly   = authViewModel.isAdmin && !isHost
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -203,11 +204,44 @@ struct HomeView: View {
                     .font(.title2).foregroundStyle(.tint).frame(width: 32)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Host Setup").font(.headline)
-                    Text("The host is choosing a submission mode and setting event details.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    if isHost {
+                        Text("You're the host — configure submission mode and event details to get started.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Text("The host is choosing a submission mode and setting event details.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
-            if isHostOrAdmin {
+
+            // Prominent host CTA — only shown to the host themselves
+            if isHost {
+                NavigationLink {
+                    HostSetupView(month: month)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "pencil.and.list.clipboard")
+                            .font(.subheadline.bold())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Set Up Your Month")
+                                .font(.subheadline.bold())
+                            Text("Choose a mode, set your event date, and open submissions.")
+                                .font(.caption)
+                                .foregroundStyle(.tint.opacity(0.8))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.bold())
+                            .foregroundStyle(.tint.opacity(0.6))
+                    }
+                    .padding(12)
+                    .background(Color.accentColor.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.tint)
+                }
+                .buttonStyle(.plain)
+            } else if isAdminOnly {
+                // Subtle link for admins who aren't the host
                 NavigationLink {
                     HostSetupView(month: month)
                 } label: {

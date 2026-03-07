@@ -262,11 +262,40 @@ async function autoAdvanceVotingR2toReading(
   await monthRef.update(update);
 }
 
+/** Reads the default deadline days for a given status from AppSettings. */
+async function defaultDeadlineDaysForStatus(status: string): Promise<number | null> {
+  const snap = await db.collection("settings").doc("defaults").get();
+  const s = snap.data() ?? {};
+  switch (status) {
+    case "vetoes":    return typeof s.vetoDays     === "number" ? s.vetoDays     : null;
+    case "voting_r1": return typeof s.votingR1Days === "number" ? s.votingR1Days : null;
+    case "voting_r2": return typeof s.votingR2Days === "number" ? s.votingR2Days : null;
+    default:          return null;
+  }
+}
+
 async function simpleStatusAdvance(
   monthRef: admin.firestore.DocumentReference,
   newStatus: string
 ): Promise<void> {
-  await monthRef.update({ status: newStatus });
+  const update: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
+    status: newStatus,
+  };
+
+  // Write the new phase's deadline atomically so the phase-change notification
+  // and the app always agree on the closing date.
+  const deadlineField = deadlineFieldForStatus(newStatus);
+  if (deadlineField) {
+    const days = await defaultDeadlineDaysForStatus(newStatus);
+    if (days !== null) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      d.setHours(23, 59, 0, 0);
+      update[deadlineField] = admin.firestore.Timestamp.fromDate(d);
+    }
+  }
+
+  await monthRef.update(update);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +320,18 @@ export const onMonthStatusChange = firestore.onDocumentWritten(
 
     // No status change — skip
     if (prevStatus === newStatus) return;
+
+    // When a month enters reading, record the timestamp so processDeadlines can
+    // send the next month's host a setup reminder ~24 hours later — far enough
+    // after the book-selected notification to avoid competing with it.
+    if (newStatus === "reading") {
+      const monthRef = db.collection("months").doc(monthId);
+      monthRef
+        .update({ readingStartedAt: admin.firestore.FieldValue.serverTimestamp() })
+        .catch((e) =>
+          console.error(`Failed to write readingStartedAt for ${monthId}:`, e)
+        );
+    }
 
     const prefKey = prefKeyForStatus(newStatus);
     if (!prefKey) return; // No notification defined for this status
@@ -461,6 +502,66 @@ export const processDeadlines = scheduler.onSchedule(
       } catch (err) {
         console.error(`Auto-advance failed for ${monthId}:`, err);
       }
+    }
+
+    // ── Host-setup notification ───────────────────────────────────────────
+    // 24 hours after a month enters reading, notify the upcoming month's host
+    // to configure their month — separated from the book-selected notification
+    // so the two don't compete. Skip if the host has already done it
+    // (i.e., the next month is no longer in "setup" status).
+
+    const readingSnap = await db
+      .collection("months")
+      .where("status", "==", "reading")
+      .get();
+
+    for (const doc of readingSnap.docs) {
+      const data = doc.data();
+      if (data.isHistorical === true) continue;
+
+      // Skip if we've already sent this notification for this month
+      if (data.hostSetupNotificationSent === true) continue;
+
+      // Check if 24 hours have elapsed since the month entered reading
+      const readingStartedAt = data.readingStartedAt as
+        | admin.firestore.Timestamp
+        | undefined;
+      if (!readingStartedAt) continue;
+      const elapsedMs = nowMs - readingStartedAt.toMillis();
+      if (elapsedMs < 24 * 60 * 60 * 1000) continue;
+
+      // Compute the next calendar month's document ID
+      const [yearStr, monthNumStr] = doc.id.split("-");
+      let nextYear  = parseInt(yearStr, 10);
+      let nextMonth = parseInt(monthNumStr, 10) + 1;
+      if (nextMonth > 12) { nextMonth = 1; nextYear += 1; }
+      const nextMonthId = `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+
+      const nextSnap = await db.collection("months").doc(nextMonthId).get();
+
+      // Mark as sent regardless — either the doc doesn't exist or it does
+      // but we don't want to re-check next cycle.
+      await doc.ref.update({ hostSetupNotificationSent: true });
+
+      if (!nextSnap.exists) continue;
+
+      const nextData = nextSnap.data()!;
+
+      // If the next month is already past setup, the host already acted
+      if (nextData.status !== "setup") continue;
+
+      const nextHostId = nextData.hostId as string | undefined;
+      if (!nextHostId) continue;
+
+      const nextMonthLabel = formatMonthId(nextMonthId);
+      const hostToken = await getTokenForUser(nextHostId, "nominations");
+      if (!hostToken) continue;
+
+      await sendToTokens(
+        [hostToken],
+        "📅 You're Up Next",
+        `You're hosting ${nextMonthLabel}. Set up your event when you're ready.`
+      );
     }
   }
 );

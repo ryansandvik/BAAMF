@@ -84,8 +84,14 @@ final class SubmissionsViewModel: ObservableObject {
 
     func closeSubmissions(monthId: String) async {
         do {
-            try await db.monthRef(monthId: monthId)
-                .updateData(["status": MonthStatus.vetoes.rawValue])
+            var update: [String: Any] = ["status": MonthStatus.vetoes.rawValue]
+            // Read the default veto deadline from AppSettings so the notification
+            // and the app always show the same date.
+            if let settings = try? await db.settingsRef().getDocument().data(as: AppSettings.self),
+               let deadline = settings.defaultDeadline(for: .vetoes) {
+                update["vetoDeadline"] = Timestamp(date: deadline)
+            }
+            try await db.monthRef(monthId: monthId).updateData(update)
             closedSuccessfully = true
         } catch {
             errorMessage = error.localizedDescription
