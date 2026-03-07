@@ -49,3 +49,12 @@ Podfile.lock
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# --- Firebase CLI / Google Cloud debug logs -----------------
+# These can contain high-entropy internal tokens from GCP deployment operations
+*.log
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
