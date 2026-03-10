@@ -149,7 +149,7 @@ struct ScheduleView: View {
             Text(month.monthName)
                 .font(.body)
                 .foregroundStyle(isPast ? .secondary : .primary)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 100, alignment: .leading)
 
             Text(hostName)
                 .font(.body)

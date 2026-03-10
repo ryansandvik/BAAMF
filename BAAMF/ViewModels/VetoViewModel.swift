@@ -228,4 +228,13 @@ final class VetoViewModel: ObservableObject {
         }
         isActing = false
     }
+
+    /// Records that the current user has reviewed the veto window.
+    /// Called when VetoView appears; adds the uid to `vetoReviewedBy` on the month
+    /// document so BadgeService can reactively clear the Home tab badge.
+    func markVetoReviewed(monthId: String, userId: String) async {
+        guard !userId.isEmpty else { return }
+        try? await db.monthRef(monthId: monthId)
+            .updateData(["vetoReviewedBy": FieldValue.arrayUnion([userId])])
+    }
 }

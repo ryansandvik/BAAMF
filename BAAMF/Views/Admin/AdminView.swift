@@ -145,7 +145,7 @@ private struct FavoritesBooksSection: View {
             } else if viewModel.favorites.isEmpty {
                 Text(viewModel.availableYears.isEmpty
                      ? "No completed months yet."
-                     : "You haven't scored any books for \(viewModel.selectedYear).")
+                     : "You haven't scored any books for \(String(viewModel.selectedYear)).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {

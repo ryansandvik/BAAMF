@@ -90,6 +90,11 @@ struct ClubMonth: Identifiable, Codable, Equatable, Hashable {
     var votingR1Deadline: Date?
     var votingR2Deadline: Date?
 
+    /// UIDs of members who have opened the veto screen during this veto phase.
+    /// Written client-side on VetoView appear; used by BadgeService to suppress
+    /// the veto badge once a member has reviewed the window.
+    var vetoReviewedBy: [String]?
+
     // MARK: Computed helpers
 
     /// The active deadline for the current phase, if one is set.

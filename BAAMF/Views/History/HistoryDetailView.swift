@@ -141,8 +141,7 @@ struct HistoryDetailView: View {
             Spacer()
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
     }
 
     // MARK: - Event card
@@ -177,8 +176,7 @@ struct HistoryDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
     }
 
     // MARK: - Scores card
@@ -241,8 +239,7 @@ struct HistoryDetailView: View {
                 .padding(.vertical, 12)
             }
         }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
     }
 
     // MARK: - Helpers
@@ -365,8 +362,7 @@ private struct AttendanceCard: View {
                 }
             }
         }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .task { vm.start() }
         .onDisappear { vm.stop() }
         .sheet(isPresented: $showRoster) {

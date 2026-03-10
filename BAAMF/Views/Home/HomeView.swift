@@ -9,11 +9,14 @@ struct HomeView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel = HomeViewModel()
+    @ObservedObject private var router = DeepLinkRouter.shared
     @State private var showCreateMonth = false
     @State private var managingMonth: ClubMonth? = nil
     /// Drives the replacement BookSearchView via navigationDestination (lifted out of LazyVStack
     /// to avoid the blank-screen bug with closure-based NavigationLink in lazy containers).
     @State private var replacementSearchMonth: ClubMonth? = nil
+    /// Drives deep-link navigation to VetoView when a veto notification is tapped.
+    @State private var deepLinkedVetoMonth: ClubMonth? = nil
 
     var body: some View {
         Group {
@@ -51,6 +54,29 @@ struct HomeView: View {
         // Replacement search — lifted out of LazyVStack to prevent blank-screen bug.
         .navigationDestination(item: $replacementSearchMonth) { m in
             BookSearchView(month: m, onSubmitted: { replacementSearchMonth = nil })
+        }
+        // Deep-link destination: veto notification tap → VetoView for that month.
+        .navigationDestination(item: $deepLinkedVetoMonth) { month in
+            VetoView(month: month, allMembers: viewModel.allMembers)
+        }
+        // When a pending veto deep link arrives (set by AppDelegate after notification tap),
+        // find the matching month and push VetoView. Fires once months are loaded.
+        .onChange(of: router.pendingLink) { _, link in
+            resolveDeepLink(link)
+        }
+        .onChange(of: viewModel.currentMonth) { _, _ in
+            // Retry resolution in case months weren't loaded when the link arrived.
+            resolveDeepLink(router.pendingLink)
+        }
+    }
+
+    private func resolveDeepLink(_ link: AppDeepLink?) {
+        guard case let .veto(monthId) = link else { return }
+        let candidates = [viewModel.previousMonth, viewModel.currentMonth, viewModel.nextMonth]
+            .compactMap { $0 }
+        if let match = candidates.first(where: { $0.id == monthId }) {
+            deepLinkedVetoMonth = match
+            _ = router.consume()
         }
     }
 
@@ -154,7 +180,8 @@ struct HomeView: View {
                 AttendanceSection(
                     monthId: monthId,
                     currentUserId: authViewModel.currentUserId ?? "",
-                    allMembers: viewModel.allMembers
+                    allMembers: viewModel.allMembers,
+                    eventDate: month.eventDate
                 )
                 .padding(.horizontal)
                 .padding(.vertical, 10)
@@ -167,11 +194,15 @@ struct HomeView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
-            if needsOrangeHighlight {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
-            }
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(
+                    needsOrangeHighlight
+                        ? Color.orange.opacity(0.35)
+                        : Color.primary.opacity(0.08),
+                    lineWidth: 1
+                )
         }
+        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
     }
 
     // MARK: - Phase content
@@ -600,27 +631,33 @@ private struct AttendanceSection: View {
     let monthId: String
     let currentUserId: String
     let allMembers: [Member]
+    /// When non-nil and in the past, the attendance toggle is locked to read-only
+    /// and the label switches from "Attending?" to "Attended?".
+    let eventDate: Date?
 
     @StateObject private var vm: AttendanceViewModel
     @State private var showRoster = false
 
-    init(monthId: String, currentUserId: String, allMembers: [Member]) {
+    init(monthId: String, currentUserId: String, allMembers: [Member], eventDate: Date? = nil) {
         self.monthId = monthId
         self.currentUserId = currentUserId
         self.allMembers = allMembers
+        self.eventDate = eventDate
         _vm = StateObject(wrappedValue: AttendanceViewModel(monthId: monthId))
     }
 
     private var userStatus: Bool? { vm.currentUserStatus(uid: currentUserId) }
+    /// True once the event date has passed — attendance becomes read-only.
+    private var isLocked: Bool { eventDate.map { $0 < Date() } ?? false }
 
     var body: some View {
         HStack(spacing: 12) {
-            // Attending toggle
+            // Attending toggle label — switches to past tense once the event ends
             HStack(spacing: 8) {
                 Image(systemName: "person.fill.checkmark")
                     .foregroundStyle(.secondary)
                     .font(.footnote)
-                Text("Attending?")
+                Text(isLocked ? "Attended?" : "Attending?")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -687,8 +724,10 @@ private struct AttendanceSection: View {
                         lineWidth: 1
                     )
                 )
+                .opacity(isLocked ? 0.5 : 1)
         }
         .buttonStyle(.plain)
+        .disabled(isLocked)
     }
 }
 

@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "automatic-gradient" : "display-p3:0.94021,0.96414,0.96783,1.00000"
+    "automatic-gradient" : "srgb:1.00000,1.00000,1.00000,1.00000"
   },
   "groups" : [
     {
@@ -72,7 +72,7 @@
           "name" : "2.1 – layer",
           "opacity-specializations" : [
             {
-              "value" : 0.5
+              "value" : 0.2
             },
             {
               "appearance" : "dark",

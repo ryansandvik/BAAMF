@@ -139,9 +139,10 @@ final class BadgeService: ObservableObject {
             }
 
         case .vetoes:
-            // Badge while the user hasn't hard-passed any book
-            let hasHardPassed = monthBooks.contains { $0.vetoType2Voters.contains(uid) }
-            if !hasHardPassed { count += 1 }
+            // Badge until the user has opened the veto screen. Opening VetoView writes
+            // their uid to `vetoReviewedBy`, which clears this badge reactively.
+            let hasReviewed = (month.vetoReviewedBy ?? []).contains(uid)
+            if !hasReviewed { count += 1 }
 
             // Extra badge if user's book was Read It–vetoed and needs replacement
             let wasReadItVetoed = userBooks.contains {

@@ -147,17 +147,19 @@ struct BookEditView: View {
             .onChange(of: viewModel.errorMessage) { _, error in
                 if error == nil && isSavingPitch { dismiss() }
             }
-            .confirmationDialog(
-                "Delete Submission",
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    Task { await deleteBook() }
+            .sheet(isPresented: $showDeleteConfirmation) {
+                ConfirmActionSheet(
+                    title: "Delete Submission",
+                    message: "This will permanently remove your book from this month's submissions."
+                ) {
+                    SheetActionButton(label: "Delete", role: .destructive) {
+                        Task { await deleteBook() }
+                    }
+                    Divider()
+                    SheetActionButton(label: "Cancel", role: .cancel) {
+                        showDeleteConfirmation = false
+                    }
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will permanently remove your book from this month's submissions.")
             }
         }
     }

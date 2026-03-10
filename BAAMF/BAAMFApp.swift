@@ -65,6 +65,31 @@ private class AppDelegate: NSObject, UIApplicationDelegate,
     ) {
         completionHandler([.banner, .sound, .badge])
     }
+
+    // MARK: Notification tap (deep-link routing)
+
+    /// Called when the user taps a notification banner or a notification action.
+    /// Reads the `type` and `monthId` fields embedded by the Cloud Function and
+    /// hands the resolved destination to DeepLinkRouter for the UI to act on.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let type    = userInfo["type"]    as? String,
+           let monthId = userInfo["monthId"] as? String {
+            Task { @MainActor in
+                switch type {
+                case "bookVetoed", "replacementBook":
+                    DeepLinkRouter.shared.pendingLink = .veto(monthId: monthId)
+                default:
+                    break
+                }
+            }
+        }
+        completionHandler()
+    }
 }
 
 // MARK: - Notification name
@@ -125,6 +150,7 @@ struct BAAMFApp: App {
 /// based on auth state.
 struct RootView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @AppStorage("onboardingSeenV1") private var hasSeenOnboarding = false
 
     var body: some View {
         Group {
@@ -140,12 +166,19 @@ struct RootView: View {
                     }
                 }
             } else if authViewModel.isAuthenticated {
-                MainTabView()
+                if hasSeenOnboarding {
+                    MainTabView()
+                } else {
+                    OnboardingView {
+                        hasSeenOnboarding = true
+                    }
+                }
             } else {
                 LoginView()
             }
         }
         .animation(.easeInOut(duration: 0.2), value: authViewModel.isAuthenticated)
         .animation(.easeInOut(duration: 0.2), value: authViewModel.isLoading)
+        .animation(.easeInOut(duration: 0.3), value: hasSeenOnboarding)
     }
 }

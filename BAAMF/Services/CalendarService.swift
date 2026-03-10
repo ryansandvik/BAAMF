@@ -86,7 +86,7 @@ actor CalendarService {
         // 5. Nothing found — create a fresh event
         if event == nil {
             let newEvent = EKEvent(eventStore: store)
-            newEvent.calendar = store.defaultCalendarForNewEvents
+            newEvent.calendar = baamfCalendar() ?? store.defaultCalendarForNewEvents
             event = newEvent
         }
 
@@ -142,6 +142,12 @@ actor CalendarService {
     }
 
     // MARK: - Private helpers
+
+    /// Returns the shared "BAAMF" calendar if it exists in the user's EventKit store,
+    /// otherwise nil (caller falls back to the system default).
+    private func baamfCalendar() -> EKCalendar? {
+        store.calendars(for: .event).first { $0.title == "BAAMF" }
+    }
 
     /// Searches the entire calendar month in EventKit for events whose title
     /// starts with "BAAMF —".

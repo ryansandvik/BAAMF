@@ -6,8 +6,6 @@
 	<string>BAAMFIcon</string>
 	<key>GOOGLE_BOOKS_API_KEY</key>
 	<string>$(GOOGLE_BOOKS_API_KEY)</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>BAAMF adds your book club events to your calendar and keeps them up to date when the host changes the date, time, or location. Full access is needed to avoid creating duplicate events.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

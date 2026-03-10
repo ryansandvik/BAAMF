@@ -169,11 +169,14 @@ async function getTokenForUser(
   return token;
 }
 
-/** Sends an FCM notification to the provided tokens (batched to ≤500 per call). */
+/** Sends an FCM notification to the provided tokens (batched to ≤500 per call).
+ *  The optional `data` map is forwarded as an FCM data payload so the iOS
+ *  notification tap handler can read `type` / `monthId` for deep-link routing. */
 async function sendToTokens(
   tokens: string[],
   title: string,
-  body: string
+  body: string,
+  data?: Record<string, string>
 ): Promise<void> {
   if (tokens.length === 0) return;
 
@@ -182,6 +185,7 @@ async function sendToTokens(
     await messaging.sendEachForMulticast({
       tokens: chunk,
       notification: { title, body },
+      data: data ?? {},
       apns: {
         payload: { aps: { sound: "default" } },
       },
@@ -599,7 +603,67 @@ export const onBookReadItVetoed = firestore.onDocumentWritten(
       ? `"${bookTitle}" was removed from ${monthLabel}. You can submit a replacement.`
       : `Your submission was removed from ${monthLabel}. You can submit a replacement.`;
 
-    await sendToTokens([token], "📚 Your Book Was Removed", body);
+    await sendToTokens(
+      [token],
+      "📚 Your Book Was Removed",
+      body,
+      { type: "bookVetoed", monthId }
+    );
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Function: Notify all members when a replacement book is submitted during veto
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const onReplacementBookSubmitted = firestore.onDocumentCreated(
+  "months/{monthId}/books/{bookId}",
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const monthId = event.params.monthId;
+
+    // Only act during the veto phase
+    const monthSnap = await db.collection("months").doc(monthId).get();
+    const monthData = monthSnap.data();
+    if (!monthData || monthData.status !== "vetoes") return;
+    if (monthData.isHistorical === true) return;
+
+    const submitterId = data.submitterId as string | undefined;
+    const bookTitle   = data.title     as string | undefined;
+    const monthLabel  = formatMonthId(monthId);
+
+    // Resolve the submitter's display name for a personal notification body
+    const submitterSnap = submitterId
+      ? await db.collection("users").doc(submitterId).get()
+      : null;
+    const submitterName =
+      (submitterSnap?.data()?.name as string | undefined) ?? "A member";
+
+    // Notify all members except the submitter themselves
+    const usersSnap = await db.collection("users").get();
+    const tokens: string[] = [];
+    for (const doc of usersSnap.docs) {
+      if (doc.id === submitterId) continue;
+      const userData = doc.data();
+      const token = userData.fcmToken as string | undefined;
+      if (typeof token !== "string" || token.length === 0) continue;
+      const prefs = (userData.notificationPrefs ?? {}) as Record<string, boolean>;
+      if (prefs["nominations"] === false) continue;
+      tokens.push(token);
+    }
+
+    const body = bookTitle
+      ? `${submitterName} submitted a replacement: "${bookTitle}". Re-veto if needed.`
+      : `${submitterName} submitted a replacement book for ${monthLabel}. Re-veto if needed.`;
+
+    await sendToTokens(
+      tokens,
+      "📖 Replacement Book Submitted",
+      body,
+      { type: "replacementBook", monthId }
+    );
   }
 );
 

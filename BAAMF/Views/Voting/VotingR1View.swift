@@ -82,12 +82,24 @@ struct VotingR1View: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                if let deadline = month.votingR1Deadline {
+                    let isPast = deadline < Date()
+                    Label(
+                        isPast
+                            ? "Closed \(deadline.formatted(date: .abbreviated, time: .omitted))"
+                            : "Closes \(deadline.formatted(date: .abbreviated, time: .shortened))",
+                        systemImage: isPast ? "clock.badge.xmark" : "clock.badge"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(isPast ? Color.red : Color.orange)
+                    .padding(.top, 2)
+                }
             }
             Spacer()
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
     }
 
@@ -149,8 +161,7 @@ struct VotingR1View: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
         }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
     }
 

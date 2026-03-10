@@ -10,6 +10,7 @@ struct VetoView: View {
 
     @StateObject private var viewModel = VetoViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
 
     // Confirmation dialogs
     @State private var pendingReadItBookId: String?
@@ -23,8 +24,10 @@ struct VetoView: View {
     /// Drives the replacement BookSearchView via navigationDestination (lifted out of
     /// LazyVStack to avoid the blank-screen bug with closure-based NavigationLink in lazy contexts).
     @State private var showingReplacementSearch = false
-    /// Shows the Hard Pass explanation sheet.
-    @State private var showHardPassInfo = false
+    /// Shows the combined Veto Guide sheet (Read It + Hard Pass).
+    @State private var showVetoGuide = false
+    /// Persisted flag — guide is shown automatically on first open only.
+    @AppStorage("vetoGuideSeenV1") private var hasSeenVetoGuide = false
 
     private var currentUserId: String { authViewModel.currentUserId ?? "" }
 
@@ -56,9 +59,24 @@ struct VetoView: View {
         }
         .navigationTitle("Veto Window")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showVetoGuide = true } label: {
+                    Image(systemName: "info.circle")
+                }
+            }
+        }
         .task {
             if let monthId = month.id {
                 viewModel.start(monthId: monthId)
+                // Mark as reviewed immediately so BadgeService clears the badge
+                // as soon as the user opens this screen.
+                await viewModel.markVetoReviewed(monthId: monthId, userId: currentUserId)
+            }
+            // Show the guide automatically the very first time the user opens Vetoes.
+            if !hasSeenVetoGuide {
+                hasSeenVetoGuide = true
+                showVetoGuide = true
             }
         }
         .onDisappear { viewModel.stop() }
@@ -75,46 +93,43 @@ struct VetoView: View {
         .navigationDestination(isPresented: $showingReplacementSearch) {
             BookSearchView(month: month, onSubmitted: {})
         }
-        // Hard Pass info sheet
-        .sheet(isPresented: $showHardPassInfo) {
-            hardPassInfoSheet
+        // Veto guide sheet (auto-shown first time; also reachable via toolbar button)
+        .sheet(isPresented: $showVetoGuide) {
+            vetoGuideSheet
         }
         // Read It confirmation
-        .confirmationDialog(
-            "Read It — Remove This Book?",
-            isPresented: Binding(
-                get: { pendingReadItBookId != nil },
-                set: { if !$0 { pendingReadItBookId = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Yes, I've Already Read It", role: .destructive) {
-                if let bookId = pendingReadItBookId {
-                    Task { await castReadIt(bookId: bookId) }
+        .sheet(isPresented: Binding(
+            get: { pendingReadItBookId != nil },
+            set: { if !$0 { pendingReadItBookId = nil } }
+        )) {
+            ConfirmActionSheet(
+                title: "Read It — Remove This Book?",
+                message: "This will permanently remove the book from this month's submissions."
+            ) {
+                SheetActionButton(label: "Yes, I've Already Read It", role: .destructive) {
+                    if let bookId = pendingReadItBookId {
+                        Task { await castReadIt(bookId: bookId) }
+                    }
+                }
+                Divider()
+                SheetActionButton(label: "Cancel", role: .cancel) {
+                    pendingReadItBookId = nil
                 }
             }
-            Button("Cancel", role: .cancel) { pendingReadItBookId = nil }
-        } message: {
-            Text("This will permanently remove the book from this month's submissions.")
         }
         // Hard Pass confirmation
-        .confirmationDialog(
-            "Hard Pass — Use a Charge?",
-            isPresented: Binding(
-                get: { pendingHardPassBook != nil },
-                set: { if !$0 { pendingHardPassBook = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Use 1 Charge — Hard Pass", role: .destructive) {
-                if let book = pendingHardPassBook {
+        .sheet(item: $pendingHardPassBook) { book in
+            ConfirmActionSheet(
+                title: "Hard Pass — Use a Charge?",
+                message: "You'll use 1 charge (\(availableCharges - 1) remaining after this). If \(threshold) members Hard Pass \"\(book.title)\", it stays in voting but receives a \u{2212}2 point penalty in Round 1."
+            ) {
+                SheetActionButton(label: "Use 1 Charge — Hard Pass", role: .destructive) {
                     Task { await castHardPass(book: book) }
                 }
-            }
-            Button("Cancel", role: .cancel) { pendingHardPassBook = nil }
-        } message: {
-            if let book = pendingHardPassBook {
-                Text("You'll use 1 Hard Pass charge (\(availableCharges - 1) remaining after this). If \(threshold) members Hard Pass \"\(book.title)\", it stays in voting but is penalized \u{2212}2 points in Round 1.")
+                Divider()
+                SheetActionButton(label: "Cancel", role: .cancel) {
+                    pendingHardPassBook = nil
+                }
             }
         }
     }
@@ -124,6 +139,10 @@ struct VetoView: View {
     private var mainContent: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
+
+                if let deadline = month.vetoDeadline {
+                    phaseDeadlineRow(deadline)
+                }
 
                 chargesHeader
 
@@ -215,7 +234,7 @@ struct VetoView: View {
 
     private var chargesHeader: some View {
         Button {
-            showHardPassInfo = true
+            showVetoGuide = true
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "bolt.shield")
@@ -251,8 +270,7 @@ struct VetoView: View {
         }
         .buttonStyle(.plain)
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
     }
 
@@ -278,8 +296,7 @@ struct VetoView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
         }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
     }
 
@@ -397,17 +414,39 @@ struct VetoView: View {
         }
     }
 
-    // MARK: - Hard Pass info sheet
+    // MARK: - Veto guide sheet
 
-    private var hardPassInfoSheet: some View {
+    private var vetoGuideSheet: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 28) {
 
-                    // Current status
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Your Charges")
+                    // MARK: Read It
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Read It")
                             .font(.headline)
+
+                        infoRow(icon: "book.closed.fill", color: .orange,
+                                title: "Remove a Book You've Already Read",
+                                body: "Tap Read It on any book you've previously read. It's permanently removed from the pool so the club isn't voting on a book you can't enjoy fresh.")
+
+                        infoRow(icon: "arrow.2.circlepath", color: .teal,
+                                title: "Submitter Gets a Replacement",
+                                body: "If your submission is removed by a Read It, you'll get a notification and can submit a replacement book before the veto window closes.")
+
+                        infoRow(icon: "person.fill", color: .secondary,
+                                title: "Can't Use on Your Own Submission",
+                                body: "You can't Read It a book you submitted yourself. The action button is replaced with a \"Your Pick\" label instead.")
+                    }
+
+                    Divider()
+
+                    // MARK: Hard Pass
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Hard Pass")
+                            .font(.headline)
+
+                        // Current charge status
                         HStack(spacing: 8) {
                             ForEach(0..<K.Veto.maxCharges, id: \.self) { i in
                                 Image(systemName: i < availableCharges ? "bolt.shield.fill" : "bolt.shield")
@@ -426,18 +465,11 @@ struct VetoView: View {
                         }
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-
-                    // How it works
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("How Hard Pass Works")
-                            .font(.headline)
+                        .cardStyle(cornerRadius: 10)
 
                         infoRow(icon: "bolt.shield.fill", color: .red,
                                 title: "Cast a Hard Pass",
-                                body: "Tap Hard Pass on any book you strongly don't want to read. You'll use 1 charge.")
+                                body: "Tap Hard Pass on any book you strongly don't want to read. Each Hard Pass costs 1 charge.")
 
                         infoRow(icon: "person.3.fill", color: .orange,
                                 title: "Threshold (\(threshold) of \(allMembers.count) members)",
@@ -445,27 +477,27 @@ struct VetoView: View {
 
                         infoRow(icon: "calendar.badge.clock", color: .teal,
                                 title: "12-Month Cooldown",
-                                body: "Each charge cools down for 12 months, counted from the first of the month you used it. A charge used in March 2025 is available again March 1, 2026.")
+                                body: "Each charge cools down for 12 months from the first of the month you used it. A charge used in March 2025 is available again March 1, 2026.")
 
                         infoRow(icon: "arrow.clockwise", color: .blue,
                                 title: "Maximum \(K.Veto.maxCharges) Charges",
-                                body: "You can hold up to \(K.Veto.maxCharges) charges at once. Unused charges carry over month to month, so saving them gives you more flexibility later.")
+                                body: "You can hold up to \(K.Veto.maxCharges) charges at once. Unused charges carry over month to month — saving them gives you more flexibility later.")
                     }
 
                     Spacer(minLength: 0)
                 }
                 .padding()
             }
-            .navigationTitle("Hard Pass")
+            .navigationTitle("Veto Guide")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showHardPassInfo = false }
+                    Button("Done") { showVetoGuide = false }
                         .fontWeight(.semibold)
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
 
@@ -485,8 +517,7 @@ struct VetoView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .cardStyle(cornerRadius: 10)
     }
 
     // MARK: - Okay with selections
@@ -511,6 +542,11 @@ struct VetoView: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     acceptedSelections = true
                 }
+                // Brief pause so the confirmation tick is visible, then return home.
+                Task {
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    dismiss()
+                }
             } label: {
                 Text("I'm okay with these selections")
                     .font(.footnote.bold())
@@ -523,8 +559,7 @@ struct VetoView: View {
             .disabled(viewModel.isActing)
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
@@ -540,8 +575,7 @@ struct VetoView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .padding(.horizontal)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .cardStyle()
         .padding(.horizontal)
         .transition(.opacity)
     }
@@ -565,5 +599,21 @@ struct VetoView: View {
 
     private func memberName(for userId: String) -> String {
         allMembers.first { $0.id == userId }?.name ?? "Unknown"
+    }
+
+    // MARK: - Phase deadline row
+
+    private func phaseDeadlineRow(_ date: Date) -> some View {
+        let isPast = date < Date()
+        return Label(
+            isPast
+                ? "Closed \(date.formatted(date: .abbreviated, time: .omitted))"
+                : "Closes \(date.formatted(date: .abbreviated, time: .shortened))",
+            systemImage: isPast ? "clock.badge.xmark" : "clock.badge"
+        )
+        .font(.caption.bold())
+        .foregroundStyle(isPast ? Color.red : Color.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
     }
 }

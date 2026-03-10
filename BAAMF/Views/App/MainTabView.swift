@@ -4,7 +4,8 @@ import Combine
 struct MainTabView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
-    @ObservedObject private var badges = BadgeService.shared
+    @ObservedObject private var badges  = BadgeService.shared
+    @ObservedObject private var router  = DeepLinkRouter.shared
 
     @State private var selectedTab = 0
 
@@ -59,6 +60,11 @@ struct MainTabView: View {
             if newTab != 1 { historyPath  = NavigationPath() }
             if newTab != 2 { schedulePath = NavigationPath() }
             if newTab != 3 { profilePath  = NavigationPath() }
+        }
+        // When a notification deep link arrives, bring the user to the Home tab.
+        // HomeView then observes DeepLinkRouter and pushes the appropriate screen.
+        .onChange(of: router.pendingLink) { _, link in
+            if link != nil { selectedTab = 0 }
         }
         // Start badge listener on sign-in, stop on sign-out.
         .task {

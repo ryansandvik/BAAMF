@@ -60,4 +60,31 @@ extension View {
     func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
         if condition { transform(self) } else { self }
     }
+
+    /// Applies the standard card appearance: grouped background, rounded corners,
+    /// a hairline border for contrast in light mode, and a subtle shadow.
+    func cardStyle(cornerRadius: CGFloat = 12) -> some View {
+        modifier(CardStyle(cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - Card style modifier
+
+private struct CardStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(
+                color: Color.black.opacity(colorScheme == .light ? 0.06 : 0),
+                radius: 6, x: 0, y: 2
+            )
+    }
 }

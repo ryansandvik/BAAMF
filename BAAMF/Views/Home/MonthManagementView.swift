@@ -181,32 +181,40 @@ struct MonthManagementView: View {
                 if isHostOrAdmin { setupViewModel.load(from: month) }
             }
             .task { await settingsVM.load() }
-            // Unsaved changes dialog
-            .confirmationDialog(
-                "Unsaved Changes",
-                isPresented: $showUnsavedChangesConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Save & Close") {
-                    Task { await saveDetails(); dismiss() }
+            // Unsaved changes sheet
+            .sheet(isPresented: $showUnsavedChangesConfirm) {
+                ConfirmActionSheet(
+                    title: "Unsaved Changes",
+                    message: "You have unsaved event details. Would you like to save them before closing?"
+                ) {
+                    SheetActionButton(label: "Save & Close") {
+                        Task { await saveDetails(); dismiss() }
+                    }
+                    Divider()
+                    SheetActionButton(label: "Discard Changes", role: .destructive) {
+                        dismiss()
+                    }
+                    Divider()
+                    SheetActionButton(label: "Keep Editing", role: .cancel) {
+                        showUnsavedChangesConfirm = false
+                    }
                 }
-                Button("Discard Changes", role: .destructive) { dismiss() }
-                Button("Keep Editing", role: .cancel) { }
-            } message: {
-                Text("You have unsaved event details. Would you like to save them before closing?")
             }
-            // Backward transition: destructive confirmationDialog
-            .confirmationDialog(
-                revertTitle,
-                isPresented: $showRevertConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Return to \(targetStatus?.displayName ?? "")", role: .destructive) {
-                    Task { await changePhase(deadline: nil) }
+            // Backward transition sheet
+            .sheet(isPresented: $showRevertConfirm) {
+                ConfirmActionSheet(title: revertTitle, message: revertMessage) {
+                    SheetActionButton(
+                        label: "Return to \(targetStatus?.displayName ?? "")",
+                        role: .destructive
+                    ) {
+                        Task { await changePhase(deadline: nil) }
+                    }
+                    Divider()
+                    SheetActionButton(label: "Cancel", role: .cancel) {
+                        targetStatus = nil
+                        showRevertConfirm = false
+                    }
                 }
-                Button("Cancel", role: .cancel) { targetStatus = nil }
-            } message: {
-                Text(revertMessage)
             }
             // Forward transition: sheet with optional DatePicker
             .sheet(isPresented: $showAdvanceSheet) {
