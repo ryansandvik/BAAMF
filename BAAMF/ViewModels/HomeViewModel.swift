@@ -165,6 +165,7 @@ final class HomeViewModel: ObservableObject {
                     guard let self else { return }
                     self.allMembers = (snapshot?.documents
                         .compactMap { try? $0.data(as: Member.self) } ?? [])
+                        .filter { !$0.isObserver }
                         .sorted { $0.name < $1.name }
                 }
             }

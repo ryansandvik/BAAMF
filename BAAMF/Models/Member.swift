@@ -10,6 +10,10 @@ enum UserRole: String, Codable {
     /// but are excluded from automatic host scheduling. Admins can still assign
     /// them a month manually.
     case virtual
+    /// Observer accounts can browse the full app but cannot submit, vote, veto,
+    /// or score. They are excluded from all member-facing lists (attendance,
+    /// scoring, admin panels). Intended for Apple review accounts and guests.
+    case observer
 }
 
 // MARK: - VetoCharge
@@ -73,4 +77,5 @@ struct Member: Identifiable, Codable, Equatable {
 
     var isAdmin: Bool { role == .admin }
     var isVirtual: Bool { role == .virtual }
+    var isObserver: Bool { role == .observer }
 }

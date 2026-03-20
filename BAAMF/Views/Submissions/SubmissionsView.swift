@@ -172,6 +172,7 @@ struct SubmissionsView: View {
 
     private var canSubmit: Bool {
         guard let userId = authViewModel.currentUserId else { return false }
+        guard !authViewModel.isObserver else { return false }
         let isHost = month.isHost(userId: userId)
         return viewModel.canSubmit(userId: userId, month: month, isHost: isHost || authViewModel.isAdmin)
     }

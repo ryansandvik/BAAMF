@@ -43,7 +43,7 @@ final class EditCompletedMonthViewModel: ObservableObject {
 
                 let (loadedMembers, loadedScores) = try await (members, scores)
 
-                allMembers = loadedMembers.sorted { $0.name < $1.name }
+                allMembers = loadedMembers.filter { !$0.isObserver }.sorted { $0.name < $1.name }
 
                 // Seed submitter from the month document
                 selectedSubmitterId = month.selectedBookSubmitterId ?? ""

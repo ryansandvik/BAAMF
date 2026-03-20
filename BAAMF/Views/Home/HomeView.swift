@@ -635,6 +635,7 @@ private struct AttendanceSection: View {
     /// and the label switches from "Attending?" to "Attended?".
     let eventDate: Date?
 
+    @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var vm: AttendanceViewModel
     @State private var showRoster = false
 
@@ -727,7 +728,7 @@ private struct AttendanceSection: View {
                 .opacity(isLocked ? 0.5 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(isLocked)
+        .disabled(isLocked || authViewModel.isObserver)
     }
 }
 

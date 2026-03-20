@@ -23,6 +23,7 @@ final class AuthViewModel: ObservableObject {
 
     var currentUserId: String? { authService.firebaseUser?.uid }
     var isAdmin: Bool { currentMember?.isAdmin ?? false }
+    var isObserver: Bool { currentMember?.isObserver ?? false }
     var isHost: Bool = false  // Set by HomeViewModel when viewing current month
 
     // MARK: - Init

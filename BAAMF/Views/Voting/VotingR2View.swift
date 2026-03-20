@@ -108,7 +108,7 @@ struct VotingR2View: View {
     @ViewBuilder
     private func r2BookRow(_ book: Book) -> some View {
         let voted = viewModel.hasVotedR2(book: book, userId: currentUserId)
-        let canVote = !hasVoted  // only 1 vote allowed in R2
+        let canVote = !hasVoted && !authViewModel.isObserver  // only 1 vote allowed in R2
 
         VStack(spacing: 0) {
             BookCard(

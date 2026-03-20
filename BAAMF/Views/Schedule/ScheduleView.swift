@@ -303,7 +303,7 @@ private struct SetupScheduleSheet: View {
                     ForEach(1...12, id: \.self) { month in
                         Picker(month.monthName, selection: assignmentBinding(for: month)) {
                             Text("Unassigned").tag("")
-                            ForEach(viewModel.allMembers) { member in
+                            ForEach(viewModel.allMembers.filter { !$0.isObserver }) { member in
                                 Text(member.name).tag(member.id ?? "")
                             }
                         }

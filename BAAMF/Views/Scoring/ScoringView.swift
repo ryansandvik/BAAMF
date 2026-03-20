@@ -76,9 +76,11 @@ struct ScoringView: View {
         ScrollView {
             VStack(spacing: 20) {
                 bookCard
-                scoreEntryCard
+                if !authViewModel.isObserver {
+                    scoreEntryCard
+                }
                 scoresListCard
-                if authViewModel.isAdmin {
+                if authViewModel.isAdmin && !authViewModel.isObserver {
                     adminScoringCard
                 }
             }

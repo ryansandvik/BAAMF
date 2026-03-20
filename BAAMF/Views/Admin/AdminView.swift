@@ -13,6 +13,7 @@ struct ProfileView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
 
     @State private var showLogHistoricalBook = false
+    @State private var showDeleteAccount = false
     @State private var generatedCode: String?
     @State private var showCodeAlert = false
     @State private var codeGenerationError: String?
@@ -80,12 +81,18 @@ struct ProfileView: View {
                 }
             }
 
-            // MARK: Sign out
+            // MARK: Sign out / account
             Section {
                 Button(role: .destructive) {
                     authViewModel.signOut()
                 } label: {
                     Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+
+                Button(role: .destructive) {
+                    showDeleteAccount = true
+                } label: {
+                    Label("Delete Account", systemImage: "trash")
                 }
             }
         }
@@ -100,6 +107,10 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showLogHistoricalBook) {
             LogHistoricalBookView()
+        }
+        .sheet(isPresented: $showDeleteAccount) {
+            DeleteAccountView()
+                .environmentObject(authViewModel)
         }
         .alert(generatedCode != nil ? "Invite Code Ready" : "Error", isPresented: $showCodeAlert) {
             if let code = generatedCode {

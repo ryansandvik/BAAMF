@@ -443,13 +443,7 @@ private struct AttendanceCard: View {
                 return MemberAttendanceRow(id: memberId, name: member.name, avatarUrl: member.photoURL, status: status)
             }
             .sorted {
-                switch ($0.status, $1.status) {
-                case (true,  true):  return $0.name < $1.name
-                case (true,  _):     return true
-                case (false, false): return $0.name < $1.name
-                case (false, nil):   return true
-                default:             return $0.name < $1.name
-                }
+                return $0.name < $1.name
             }
     }
 }

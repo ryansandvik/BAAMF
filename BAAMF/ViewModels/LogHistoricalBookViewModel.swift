@@ -71,7 +71,7 @@ final class LogHistoricalBookViewModel: ObservableObject {
         isLoading = true
         Task {
             do {
-                allMembers = try await db.fetchAllMembers().sorted { $0.name < $1.name }
+                allMembers = try await db.fetchAllMembers().filter { !$0.isObserver }.sorted { $0.name < $1.name }
                 // Default all members to participating at score 4.0
                 for member in allMembers {
                     guard let id = member.id else { continue }

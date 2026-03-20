@@ -21,7 +21,7 @@ final class HistoryViewModel: ObservableObject {
         // Load all members once (they rarely change)
         Task {
             do {
-                allMembers = try await db.fetchAllMembers()
+                allMembers = try await db.fetchAllMembers().filter { !$0.isObserver }
             } catch {
                 errorMessage = error.localizedDescription
             }

@@ -304,7 +304,10 @@ struct VetoView: View {
 
     @ViewBuilder
     private func readItButton(_ book: Book) -> some View {
-        if book.submitterId == currentUserId {
+        if authViewModel.isObserver {
+            // Observers can browse but cannot veto
+            Color.clear.frame(maxWidth: .infinity)
+        } else if book.submitterId == currentUserId {
             // Can't Read It your own submission — show a non-interactive label instead
             VStack(spacing: 3) {
                 Image(systemName: "person.fill")

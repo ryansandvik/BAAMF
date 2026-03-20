@@ -89,7 +89,7 @@ final class ScheduleViewModel: ObservableObject {
 
         // Virtual members are excluded from automatic scheduling.
         // Admins can still assign them manually via the picker.
-        let memberIds = allMembers.filter { !$0.isVirtual }.compactMap { $0.id }
+        let memberIds = allMembers.filter { !$0.isVirtual && !$0.isObserver }.compactMap { $0.id }
         guard !memberIds.isEmpty else { return result }
 
         // Tally how many months each member is already assigned

@@ -108,7 +108,7 @@ struct VotingR1View: View {
     @ViewBuilder
     private func r1BookRow(_ book: Book) -> some View {
         let voted = viewModel.hasVotedR1(book: book, userId: currentUserId)
-        let canVote = !voted && votesRemaining > 0
+        let canVote = !voted && votesRemaining > 0 && !authViewModel.isObserver
 
         VStack(spacing: 0) {
             BookCard(
