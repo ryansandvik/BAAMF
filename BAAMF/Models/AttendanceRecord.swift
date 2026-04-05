@@ -9,4 +9,7 @@ struct AttendanceRecord: Identifiable, Codable, Equatable {
 
     var attending: Bool
     var updatedAt: Date
+    /// When true the member has indicated they might come but aren't sure.
+    /// Maybes are grouped with no-response for roll call purposes.
+    var isMaybe: Bool?
 }

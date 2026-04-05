@@ -68,6 +68,9 @@ struct ClubMonth: Identifiable, Codable, Equatable, Hashable {
     var eventEndDate: Date?
     var eventLocation: String?
     var eventNotes: String?
+    /// Host-written description of the activity — what to bring, links, prep notes, etc.
+    /// Supports markdown hyperlinks: [text](url)
+    var eventDescription: String?
     var isHistorical: Bool?
     var status: MonthStatus
     var winningBookId: String?

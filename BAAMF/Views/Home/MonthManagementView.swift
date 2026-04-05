@@ -7,6 +7,7 @@ import FirebaseFirestore
 struct MonthManagementView: View {
 
     let month: ClubMonth
+    var allMembers: [Member] = []
 
     @StateObject private var setupViewModel = HostSetupViewModel()
     @StateObject private var settingsVM = AppSettingsViewModel()
@@ -26,6 +27,10 @@ struct MonthManagementView: View {
 
     // Unsaved-changes guard
     @State private var showUnsavedChangesConfirm = false
+
+    // Voting participation
+    @State private var participationBooks: [Book] = []
+    @State private var isLoadingParticipation = false
 
     private let db = FirestoreService.shared
     private let allPhases = MonthStatus.allCases
@@ -75,6 +80,11 @@ struct MonthManagementView: View {
                     Text("Current Phase")
                 }
 
+                // MARK: Voting participation (host / admin only, during voting phases)
+                if isHostOrAdmin && (month.status == .votingR1 || month.status == .votingR2) {
+                    votingParticipationSection
+                }
+
                 // MARK: Phase controls (host / admin only)
                 if isHostOrAdmin {
                     Section {
@@ -113,17 +123,18 @@ struct MonthManagementView: View {
                     Section {
                         Toggle("Add Event Date", isOn: $setupViewModel.hasEventDate)
                         if setupViewModel.hasEventDate {
-                            DatePicker("Start",
-                                       selection: $setupViewModel.eventDate,
-                                       displayedComponents: [.date, .hourAndMinute])
-                            DatePicker("End",
-                                       selection: $setupViewModel.eventEndDate,
-                                       in: setupViewModel.eventDate...,
-                                       displayedComponents: [.date, .hourAndMinute])
+                            FiveMinuteDatePicker("Start", selection: $setupViewModel.eventDate)
+                                .onChange(of: setupViewModel.eventDate) { old, new in
+                                    let delta = new.timeIntervalSince(old)
+                                    if delta != 0 {
+                                        setupViewModel.eventEndDate = setupViewModel.eventEndDate.addingTimeInterval(delta)
+                                    }
+                                }
+                            FiveMinuteDatePicker("End", selection: $setupViewModel.eventEndDate)
                         }
                         TextField("Location (optional)", text: $setupViewModel.eventLocation)
-                        TextField("Notes (optional)",
-                                  text: $setupViewModel.eventNotes,
+                        TextField("Activity description (optional, supports markdown links)",
+                                  text: $setupViewModel.eventDescription,
                                   axis: .vertical)
                             .lineLimit(3...6)
 
@@ -181,6 +192,12 @@ struct MonthManagementView: View {
                 if isHostOrAdmin { setupViewModel.load(from: month) }
             }
             .task { await settingsVM.load() }
+            .task {
+                guard isHostOrAdmin,
+                      month.status == .votingR1 || month.status == .votingR2,
+                      let monthId = month.id else { return }
+                await fetchParticipationBooks(monthId: monthId)
+            }
             // Unsaved changes sheet
             .sheet(isPresented: $showUnsavedChangesConfirm) {
                 ConfirmActionSheet(
@@ -229,6 +246,68 @@ struct MonthManagementView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Voting participation
+
+    @ViewBuilder
+    private var votingParticipationSection: some View {
+        let isR2 = month.status == .votingR2
+        let roundLabel = isR2 ? "Round 2" : "Round 1"
+
+        // Aggregate unique voter IDs for the current round
+        let voterIds: Set<String> = participationBooks.reduce(into: []) { set, book in
+            let voters = isR2 ? book.votingR2Voters : book.votingR1Voters
+            // For R2 only count books that advanced
+            guard !isR2 || book.advancedToR2 else { return }
+            voters.forEach { set.insert($0) }
+        }
+
+        // Filter eligible members (non-virtual, non-observer)
+        let eligible = allMembers.filter { !($0.isVirtual) && !($0.isObserver) }
+        let votedMembers   = eligible.filter { voterIds.contains($0.id ?? "") }
+        let pendingMembers = eligible.filter { !voterIds.contains($0.id ?? "") }
+
+        Section {
+            if isLoadingParticipation {
+                HStack {
+                    ProgressView()
+                    Text("Loading…").foregroundStyle(.secondary).font(.footnote)
+                }
+            } else {
+                HStack {
+                    Text("\(votedMembers.count) of \(eligible.count) voted")
+                        .font(.body.bold())
+                    Spacer()
+                    if votedMembers.count == eligible.count {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    }
+                }
+
+                if !pendingMembers.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pending:")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        ForEach(pendingMembers.sorted { $0.name < $1.name }, id: \.id) { member in
+                            Text("• \(member.name)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("\(roundLabel) Participation")
+        }
+    }
+
+    private func fetchParticipationBooks(monthId: String) async {
+        isLoadingParticipation = true
+        if let snap = try? await db.booksRef(monthId: monthId).getDocuments() {
+            participationBooks = snap.documents.compactMap { try? $0.data(as: Book.self) }
+        }
+        isLoadingParticipation = false
     }
 
     // MARK: - Advance phase sheet

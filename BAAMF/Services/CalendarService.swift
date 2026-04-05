@@ -86,7 +86,14 @@ actor CalendarService {
         // 5. Nothing found — create a fresh event
         if event == nil {
             let newEvent = EKEvent(eventStore: store)
-            newEvent.calendar = baamfCalendar() ?? store.defaultCalendarForNewEvents
+            newEvent.calendar = baamfCalendar()
+                ?? store.defaultCalendarForNewEvents
+                ?? anyWritableCalendar()
+            // If every possible calendar is nil the event cannot be saved.
+            guard newEvent.calendar != nil else {
+                print("CalendarService: no writable calendar found — cannot create event")
+                return
+            }
             event = newEvent
         }
 
@@ -107,7 +114,9 @@ actor CalendarService {
             ?? Calendar.current.date(byAdding: .hour, value: 2, to: startDate)
             ?? startDate
         event.location  = month.eventLocation
-        event.notes     = month.eventNotes
+        // Use the activity description as the calendar event notes.
+        // Fall back to the legacy eventNotes field for months saved before consolidation.
+        event.notes     = month.eventDescription ?? month.eventNotes
         // Ownership brand — lets us distinguish BAAMF events from any user event
         // that happens to share the "BAAMF —" title prefix.
         event.url       = URL(string: "baamf://managed/\(monthId)")
@@ -147,6 +156,14 @@ actor CalendarService {
     /// otherwise nil (caller falls back to the system default).
     private func baamfCalendar() -> EKCalendar? {
         store.calendars(for: .event).first { $0.title == "BAAMF" }
+    }
+
+    /// Last-resort fallback: the first calendar that allows content modifications.
+    /// Covers configurations where defaultCalendarForNewEvents returns nil
+    /// (e.g., all calendars are read-only or from a managed account).
+    private func anyWritableCalendar() -> EKCalendar? {
+        store.calendars(for: .event)
+            .first { $0.allowsContentModifications }
     }
 
     /// Searches the entire calendar month in EventKit for events whose title

@@ -85,28 +85,33 @@ final class ScheduleViewModel: ObservableObject {
             let v = result[String(month)]
             return v == nil || v!.isEmpty
         }
-        guard !unassigned.isEmpty else { return result }
 
-        // Virtual members are excluded from automatic scheduling.
-        // Admins can still assign them manually via the picker.
-        let memberIds = allMembers.filter { !$0.isVirtual && !$0.isObserver }.compactMap { $0.id }
-        guard !memberIds.isEmpty else { return result }
+        // If everything is already assigned, re-randomize all 12 months from
+        // scratch so the admin can shuffle a few times before locking it in.
+        let monthsToFill: [Int]
+        if unassigned.isEmpty {
+            monthsToFill = Array(1...12)
+            result = [:]          // Clear existing so counts start at zero
+        } else {
+            monthsToFill = unassigned
+        }
 
-        // Tally how many months each member is already assigned
+        // Virtual / observer members are excluded from automatic scheduling.
+        // Shuffle so equal-count tiebreaks are random, not alphabetical.
+        let memberIds = allMembers.filter { !$0.isVirtual && !$0.isObserver }.compactMap { $0.id }.shuffled()
+        guard !memberIds.isEmpty else { return existing }
+
+        // Tally how many months each member is already assigned (after any reset)
         var counts: [String: Int] = Dictionary(uniqueKeysWithValues: memberIds.map { ($0, 0) })
         for (_, memberId) in result where !memberId.isEmpty {
             counts[memberId, default: 0] += 1
         }
 
-        for month in unassigned {
-            // Pick the member with the fewest current assignments; alphabetical name as tiebreaker
+        for month in monthsToFill {
+            // Pick the member with the fewest current assignments.
+            // Because memberIds is pre-shuffled, equal-count ties resolve randomly.
             guard let pick = memberIds.min(by: { a, b in
-                let ca = counts[a, default: 0]
-                let cb = counts[b, default: 0]
-                if ca != cb { return ca < cb }
-                let na = allMembers.first { $0.id == a }?.name ?? ""
-                let nb = allMembers.first { $0.id == b }?.name ?? ""
-                return na < nb
+                counts[a, default: 0] < counts[b, default: 0]
             }) else { continue }
             result[String(month)] = pick
             counts[pick, default: 0] += 1

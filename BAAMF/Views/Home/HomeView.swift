@@ -17,6 +17,10 @@ struct HomeView: View {
     @State private var replacementSearchMonth: ClubMonth? = nil
     /// Drives deep-link navigation to VetoView when a veto notification is tapped.
     @State private var deepLinkedVetoMonth: ClubMonth? = nil
+    /// Drives the book detail sheet from the reading phase card.
+    @State private var readingDetailMonth: ClubMonth? = nil
+    /// Drives the month event detail sheet from the card header.
+    @State private var detailMonth: ClubMonth? = nil
 
     var body: some View {
         Group {
@@ -32,7 +36,7 @@ struct HomeView: View {
         .navigationBarTitleDisplayMode(.large)
         .task {
             if let uid = authViewModel.currentUserId {
-                viewModel.start(currentUserId: uid)
+                viewModel.start(currentUserId: uid, isObserver: authViewModel.isObserver)
             }
         }
         .onDisappear { viewModel.stop() }
@@ -48,7 +52,7 @@ struct HomeView: View {
             CreateMonthSheet(allMembers: viewModel.allMembers)
         }
         .sheet(item: $managingMonth) { month in
-            MonthManagementView(month: month)
+            MonthManagementView(month: month, allMembers: viewModel.allMembers)
                 .environmentObject(authViewModel)
         }
         // Replacement search — lifted out of LazyVStack to prevent blank-screen bug.
@@ -126,46 +130,63 @@ struct HomeView: View {
 
         VStack(spacing: 0) {
 
-            // ── Header ──────────────────────────────────────────────────────
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(month.month.monthName + " \(month.year)")
-                            .font(.title2.bold())
-                        Text("Host: \(viewModel.memberName(for: month.hostId))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 8) {
-                        StatusBadge(status: month.status)
-                        let canManage = (authViewModel.currentUserId ?? "") == month.hostId
-                            || authViewModel.isAdmin
-                        if canManage {
-                            Button {
-                                managingMonth = month
-                            } label: {
-                                Image(systemName: "gearshape")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
+            // ── Header (tappable → MonthDetailSheet when details exist) ─────
+            let hasDetailContent = month.eventDate != nil
+                || !(month.eventLocation ?? "").isEmpty
+                || !(month.eventDescription ?? "").isEmpty
+            Button {
+                if hasDetailContent { detailMonth = month }
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(month.month.monthName + " \(month.year)")
+                                .font(.title2.bold())
+                                .foregroundStyle(.primary)
+                            Text("Host: \(viewModel.memberName(for: month.hostId))")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 8) {
+                            StatusBadge(status: month.status)
+                            let canManage = (authViewModel.currentUserId ?? "") == month.hostId
+                                || authViewModel.isAdmin
+                            if canManage {
+                                Button {
+                                    managingMonth = month
+                                } label: {
+                                    Image(systemName: "gearshape")
+                                        .font(.body)
+                                        .foregroundStyle(.tint)
+                                }
                             }
                         }
                     }
-                }
 
-                if let eventDate = month.eventDate {
-                    Label(eventDate.formatted(date: .abbreviated, time: .shortened),
-                          systemImage: "calendar")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if let location = month.eventLocation, !location.isEmpty {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if let eventDate = month.eventDate {
+                        Label(eventDate.formatted(date: .abbreviated, time: .shortened),
+                              systemImage: "calendar")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let location = month.eventLocation, !location.isEmpty {
+                        Label(location, systemImage: "mappin.and.ellipse")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if hasDetailContent {
+                        Label("Tap for event details", systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                    }
                 }
             }
+            .buttonStyle(.plain)
             .padding()
+            .sheet(item: $detailMonth) { m in
+                MonthDetailSheet(month: m, hostName: viewModel.memberName(for: m.hostId))
+            }
 
             Divider()
 
@@ -181,7 +202,9 @@ struct HomeView: View {
                     monthId: monthId,
                     currentUserId: authViewModel.currentUserId ?? "",
                     allMembers: viewModel.allMembers,
-                    eventDate: month.eventDate
+                    eventDate: month.eventDate,
+                    isHostOrAdmin: (authViewModel.currentUserId ?? "") == month.hostId
+                        || authViewModel.isAdmin
                 )
                 .padding(.horizontal)
                 .padding(.vertical, 10)
@@ -424,48 +447,78 @@ struct HomeView: View {
 
     @ViewBuilder
     private func readingContent(_ month: ClubMonth) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            if let coverUrl = month.selectedBookCoverUrl {
-                CoverImage(url: coverUrl, size: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 56, height: 80)
-                    .overlay {
-                        Image(systemName: "book.fill")
-                            .foregroundStyle(.secondary)
-                    }
-            }
+        let selectedBook = viewModel.books.first { $0.id == month.selectedBookId }
+        let canShowDetail = selectedBook != nil
+            || (month.selectedBookId != nil && month.id != nil)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("This Month's Pick")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-                if let title = month.selectedBookTitle {
-                    Text(title)
-                        .font(.headline)
-                        .lineLimit(3)
+        Button {
+            if canShowDetail { readingDetailMonth = month }
+        } label: {
+            HStack(alignment: .top, spacing: 16) {
+                if let coverUrl = month.selectedBookCoverUrl {
+                    CoverImage(url: coverUrl, size: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 56, height: 80)
+                        .overlay {
+                            Image(systemName: "book.fill")
+                                .foregroundStyle(.secondary)
+                        }
                 }
-                if let author = month.selectedBookAuthor {
-                    Text(author)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                if let submitterId = month.selectedBookSubmitterId {
-                    Text("Submitted by \(viewModel.memberName(for: submitterId))")
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("This Month's Pick")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                    if let title = month.selectedBookTitle {
+                        Text(title)
+                            .font(.headline)
+                            .lineLimit(3)
+                    }
+                    if let author = month.selectedBookAuthor {
+                        Text(author)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let submitterId = month.selectedBookSubmitterId {
+                        Text("Submitted by \(viewModel.memberName(for: submitterId))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if canShowDetail {
+                        Label("Tap for details", systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                            .padding(.top, 2)
+                    } else {
+                        Text("Scoring opens at your event.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 2)
+                    }
                 }
-                Text("Scoring opens at your event.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 2)
-            }
 
-            Spacer()
+                Spacer()
+
+                if canShowDetail {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .sheet(item: $readingDetailMonth) { m in
+            BookDetailSheet(
+                preloadedBook: viewModel.books.first { $0.id == m.selectedBookId },
+                monthId: m.id,
+                bookId: m.selectedBookId,
+                allMembers: viewModel.allMembers
+            )
         }
     }
 
@@ -634,67 +687,144 @@ private struct AttendanceSection: View {
     /// When non-nil and in the past, the attendance toggle is locked to read-only
     /// and the label switches from "Attending?" to "Attended?".
     let eventDate: Date?
+    /// True when the current user is host or admin — enables the roll call button.
+    let isHostOrAdmin: Bool
 
     @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var vm: AttendanceViewModel
     @State private var showRoster = false
+    @State private var rollCallSent = false
+    @State private var isSendingRollCall = false
+    @State private var showRollCallConfirmation = false
 
-    init(monthId: String, currentUserId: String, allMembers: [Member], eventDate: Date? = nil) {
+    init(monthId: String, currentUserId: String, allMembers: [Member],
+         eventDate: Date? = nil, isHostOrAdmin: Bool = false) {
         self.monthId = monthId
         self.currentUserId = currentUserId
         self.allMembers = allMembers
         self.eventDate = eventDate
+        self.isHostOrAdmin = isHostOrAdmin
         _vm = StateObject(wrappedValue: AttendanceViewModel(monthId: monthId))
     }
 
     private var userStatus: Bool? { vm.currentUserStatus(uid: currentUserId) }
-    /// True once the event date has passed — attendance becomes read-only.
-    private var isLocked: Bool { eventDate.map { $0 < Date() } ?? false }
+    private var userIsMaybe: Bool  { vm.currentUserIsMaybe(uid: currentUserId) }
+    private var isLocked: Bool     { eventDate.map { $0 < Date() } ?? false }
+
+    /// Member UIDs who haven't given a firm response (no record, or maybe) — roll call targets.
+    /// Both "Yes" and "No" are treated as confirmed responses and excluded from the roll call.
+    private var rollCallTargetUids: [String] {
+        allMembers.compactMap { member in
+            guard let id = member.id else { return nil }
+            let record = vm.records.first { $0.id == id }
+            let isConfirmed = record != nil && record!.isMaybe != true
+            return isConfirmed ? nil : id
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Attending toggle label — switches to past tense once the event ends
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "person.fill.checkmark")
-                    .foregroundStyle(.secondary)
-                    .font(.footnote)
-                Text(isLocked ? "Attended?" : "Attending?")
+                // Label — fixed so it never wraps or pushes buttons off screen
+                Label(isLocked ? "Attended?" : "Attending?", systemImage: "person.fill.checkmark")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
+                    .lineLimit(1)
+                    .fixedSize()
 
-            Spacer()
+                Spacer(minLength: 4)
 
-            // Yes / No segmented buttons
-            HStack(spacing: 6) {
-                attendanceButton(label: "Yes", value: true)
-                attendanceButton(label: "No",  value: false)
-            }
+                // Yes / Maybe / No buttons
+                HStack(spacing: 6) {
+                    attendanceButton(label: "Yes", value: true)
+                    if !isLocked { maybeButton() }
+                    attendanceButton(label: "No",  value: false)
+                }
 
-            // Summary pill — tappable to show roster
-            if vm.attendingCount > 0 || vm.notAttendingCount > 0 {
+                // Going count pill + roster button
                 Button { showRoster = true } label: {
-                    Text("\(vm.attendingCount) going")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Color.green.opacity(0.12))
-                        .foregroundStyle(.green)
-                        .clipShape(Capsule())
+                    HStack(spacing: 4) {
+                        let going = vm.attendingCount
+                        if going > 0 {
+                            Text("\(going) going")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.green.opacity(0.12))
+                                .foregroundStyle(.green)
+                                .clipShape(Capsule())
+                        }
+                        Image(systemName: "person.2")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .buttonStyle(.plain)
             }
 
-            // Roster icon button
-            Button { showRoster = true } label: {
-                Image(systemName: "person.2")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            // Roll call — host/admin only, before event date passes, when members are pending
+            if isHostOrAdmin && !isLocked && !rollCallTargetUids.isEmpty {
+                HStack {
+                    Spacer()
+                    Button {
+                        showRollCallConfirmation = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isSendingRollCall {
+                                ProgressView().scaleEffect(0.8)
+                            } else {
+                                Image(systemName: rollCallSent
+                                      ? "checkmark.circle.fill" : "bell.badge")
+                                .font(.caption)
+                            }
+                            Text(rollCallSent
+                                 ? "Roll call sent!"
+                                 : "Send roll call (\(rollCallTargetUids.count) pending)")
+                            .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(rollCallSent
+                                    ? Color.green.opacity(0.12)
+                                    : Color.orange.opacity(0.12))
+                        .foregroundStyle(rollCallSent ? .green : .orange)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSendingRollCall || rollCallSent)
+                }
             }
-            .buttonStyle(.plain)
         }
         .task { vm.start() }
         .onDisappear { vm.stop() }
+        .sheet(isPresented: $showRollCallConfirmation) {
+            let pendingNames = rollCallTargetUids
+                .compactMap { uid in allMembers.first { $0.id == uid }?.name }
+                .sorted()
+            ConfirmActionSheet(
+                title: "Send Roll Call?",
+                message: "Will notify \(rollCallTargetUids.count) member\(rollCallTargetUids.count == 1 ? "" : "s") who haven't confirmed:\n\n\(pendingNames.joined(separator: "\n"))"
+            ) {
+                SheetActionButton(label: "Send Notification") {
+                    showRollCallConfirmation = false
+                    Task { await sendRollCall() }
+                }
+                Divider()
+                SheetActionButton(label: "Cancel", role: .cancel) {
+                    showRollCallConfirmation = false
+                }
+            }
+        }
+        .onChange(of: vm.isLoading) { _, loading in
+            guard !loading else { return }
+            let virtualMembers = allMembers.filter { $0.isVirtual }
+            for member in virtualMembers {
+                guard let id = member.id else { continue }
+                if vm.currentUserStatus(uid: id) == nil && !vm.currentUserIsMaybe(uid: id) {
+                    Task { await vm.setAttendance(attending: false, uid: id) }
+                }
+            }
+        }
         .sheet(isPresented: $showRoster) {
             AttendanceRosterSheet(allMembers: allMembers, records: vm.records)
         }
@@ -702,33 +832,51 @@ private struct AttendanceSection: View {
 
     @ViewBuilder
     private func attendanceButton(label: String, value: Bool) -> some View {
-        let isSelected = userStatus == value
+        let isSelected = !userIsMaybe && userStatus == value
+        let color: Color = value ? .green : .red
         Button {
             Task { await vm.setAttendance(attending: value, uid: currentUserId) }
         } label: {
             Text(label)
                 .font(.caption.bold())
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(isSelected
-                    ? (value ? Color.green : Color.red).opacity(0.15)
-                    : Color(.systemGray5))
-                .foregroundStyle(isSelected
-                    ? (value ? Color.green : Color.red)
-                    : Color.secondary)
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(isSelected ? color.opacity(0.15) : Color(.systemGray5))
+                .foregroundStyle(isSelected ? color : Color.secondary)
                 .clipShape(Capsule())
-                .overlay(
-                    Capsule().strokeBorder(
-                        isSelected ? (value ? Color.green : Color.red).opacity(0.4) : Color.clear,
-                        lineWidth: 1
-                    )
-                )
+                .overlay(Capsule().strokeBorder(
+                    isSelected ? color.opacity(0.4) : Color.clear, lineWidth: 1))
                 .opacity(isLocked ? 0.5 : 1)
         }
         .buttonStyle(.plain)
         .disabled(isLocked || authViewModel.isObserver)
+    }
+
+    @ViewBuilder
+    private func maybeButton() -> some View {
+        let isSelected = userIsMaybe
+        Button {
+            Task { await vm.setMaybe(uid: currentUserId) }
+        } label: {
+            Text("Maybe")
+                .font(.caption.bold())
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(isSelected ? Color.orange.opacity(0.15) : Color(.systemGray5))
+                .foregroundStyle(isSelected ? Color.orange : Color.secondary)
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(
+                    isSelected ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(authViewModel.isObserver)
+    }
+
+    private func sendRollCall() async {
+        isSendingRollCall = true
+        await vm.sendRollCall(sentBy: currentUserId, targetUids: rollCallTargetUids)
+        isSendingRollCall = false
+        if vm.errorMessage == nil { rollCallSent = true }
     }
 }
 

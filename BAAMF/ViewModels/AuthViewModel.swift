@@ -179,6 +179,10 @@ final class AuthViewModel: ObservableObject {
         }
         isLoading = false
 
+        // Observer accounts are read-only guests — skip notifications and FCM token
+        // registration entirely so they don't receive push notifications.
+        guard !(currentMember?.isObserver ?? false) else { return }
+
         // Request notification permission and save any already-available FCM token.
         // requestAuthorization() is a no-op after the first prompt.
         NotificationService.shared.requestAuthorization()

@@ -138,6 +138,7 @@ private struct FavoritesBooksSection: View {
     let userId: String
 
     @StateObject private var viewModel: FavoriteBooksViewModel
+    @EnvironmentObject private var authViewModel: AuthViewModel
 
     init(userId: String) {
         self.userId = userId
@@ -161,7 +162,16 @@ private struct FavoritesBooksSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(viewModel.favorites) { entry in
-                    FavoriteBookRow(entry: entry)
+                    NavigationLink {
+                        HistoryDetailView(
+                            month: entry.month,
+                            allMembers: viewModel.allMembers,
+                            isAdmin: authViewModel.isAdmin,
+                            currentUserId: authViewModel.currentUserId ?? ""
+                        )
+                    } label: {
+                        FavoriteBookRow(entry: entry)
+                    }
                 }
             }
         } header: {

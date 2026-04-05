@@ -10,15 +10,13 @@ final class HostSetupViewModel: ObservableObject {
     @Published var submissionMode: SubmissionMode = .open
     @Published var theme = ""
     @Published var hasEventDate = false
-    @Published var eventDate: Date = {
-        Calendar.current.date(byAdding: .weekOfYear, value: 6, to: Date()) ?? Date()
-    }()
+    @Published var eventDate: Date = Date()
     @Published var eventEndDate: Date = {
-        let start = Calendar.current.date(byAdding: .weekOfYear, value: 6, to: Date()) ?? Date()
-        return Calendar.current.date(byAdding: .hour, value: 2, to: start) ?? start
+        Calendar.current.date(byAdding: .hour, value: 2, to: Date()) ?? Date()
     }()
     @Published var eventLocation = ""
-    @Published var eventNotes = ""
+    /// Host's activity description. Supports markdown hyperlinks.
+    @Published var eventDescription = ""
     /// Deadline for the submissions phase. Defaults to 7 days from now.
     /// Ignored (and cleared) when submissionMode is .pick4.
     @Published var submissionDeadline: Date = Calendar.current.date(
@@ -40,17 +38,17 @@ final class HostSetupViewModel: ObservableObject {
     private var originalEventDate: Date = Date()
     private var originalEventEndDate: Date = Date()
     private var originalEventLocation: String = ""
-    private var originalEventNotes: String = ""
+    private var originalEventDescription: String = ""
 
     /// True if any event-detail field differs from what was last loaded from Firestore.
     var hasUnsavedChanges: Bool {
-        submissionMode  != originalSubmissionMode   ||
-        theme           != originalTheme            ||
-        hasEventDate    != originalHasEventDate     ||
+        submissionMode    != originalSubmissionMode   ||
+        theme             != originalTheme            ||
+        hasEventDate      != originalHasEventDate     ||
         (hasEventDate && eventDate    != originalEventDate)    ||
         (hasEventDate && eventEndDate != originalEventEndDate) ||
-        eventLocation   != originalEventLocation    ||
-        eventNotes      != originalEventNotes
+        eventLocation     != originalEventLocation    ||
+        eventDescription  != originalEventDescription
     }
 
     // MARK: - Pre-populate from existing month
@@ -67,19 +65,19 @@ final class HostSetupViewModel: ObservableObject {
                 ?? start
         }
         eventLocation      = month.eventLocation ?? ""
-        eventNotes         = month.eventNotes ?? ""
+        eventDescription   = month.eventDescription ?? ""
         submissionDeadline = month.submissionDeadline
             ?? Calendar.current.date(byAdding: .day, value: 7, to: Date())
             ?? Date()
 
         // Snapshot original values so hasUnsavedChanges starts false
-        originalSubmissionMode  = submissionMode
-        originalTheme           = theme
-        originalHasEventDate    = hasEventDate
-        originalEventDate       = eventDate
-        originalEventEndDate    = eventEndDate
-        originalEventLocation   = eventLocation
-        originalEventNotes      = eventNotes
+        originalSubmissionMode   = submissionMode
+        originalTheme            = theme
+        originalHasEventDate     = hasEventDate
+        originalEventDate        = eventDate
+        originalEventEndDate     = eventEndDate
+        originalEventLocation    = eventLocation
+        originalEventDescription = eventDescription
     }
 
     // MARK: - Admin: create a brand-new month document
@@ -128,8 +126,11 @@ final class HostSetupViewModel: ObservableObject {
         let loc = eventLocation.trimmingCharacters(in: .whitespaces)
         data["eventLocation"] = loc.isEmpty ? FieldValue.delete() : loc
 
-        let notes = eventNotes.trimmingCharacters(in: .whitespaces)
-        data["eventNotes"] = notes.isEmpty ? FieldValue.delete() : notes
+        // eventNotes has been consolidated into eventDescription; always clear it.
+        data["eventNotes"] = FieldValue.delete()
+
+        let desc = eventDescription.trimmingCharacters(in: .whitespaces)
+        data["eventDescription"] = desc.isEmpty ? FieldValue.delete() : desc
 
         do {
             try await db.monthRef(monthId: monthId).updateData(data)
@@ -168,8 +169,11 @@ final class HostSetupViewModel: ObservableObject {
         let loc = eventLocation.trimmingCharacters(in: .whitespaces)
         data["eventLocation"] = loc.isEmpty ? FieldValue.delete() : loc
 
-        let notes = eventNotes.trimmingCharacters(in: .whitespaces)
-        data["eventNotes"] = notes.isEmpty ? FieldValue.delete() : notes
+        // eventNotes has been consolidated into eventDescription; always clear it.
+        data["eventNotes"] = FieldValue.delete()
+
+        let desc = eventDescription.trimmingCharacters(in: .whitespaces)
+        data["eventDescription"] = desc.isEmpty ? FieldValue.delete() : desc
 
         // Submission deadline — set for open/theme, cleared for pick-4
         if submissionMode != .pick4 {

@@ -17,23 +17,29 @@ struct EditMonthDetailsView: View {
                 Section {
                     Toggle("Add Event Date", isOn: $viewModel.hasEventDate)
                     if viewModel.hasEventDate {
-                        DatePicker(
-                            "Date & Time",
-                            selection: $viewModel.eventDate,
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
+                        FiveMinuteDatePicker("Start", selection: $viewModel.eventDate)
+                            .onChange(of: viewModel.eventDate) { old, new in
+                                let delta = new.timeIntervalSince(old)
+                                if delta != 0 {
+                                    viewModel.eventEndDate = viewModel.eventEndDate.addingTimeInterval(delta)
+                                }
+                            }
+                        FiveMinuteDatePicker("End", selection: $viewModel.eventEndDate)
                     }
                 } header: {
                     Text("When")
                 }
 
-                // MARK: Where & Notes
+                // MARK: Where & Activity
                 Section {
                     TextField("Location (optional)", text: $viewModel.eventLocation)
-                    TextField("Notes (optional)", text: $viewModel.eventNotes, axis: .vertical)
-                        .lineLimit(3...6)
+                    TextField("Activity description (optional)", text: $viewModel.eventDescription, axis: .vertical)
+                        .lineLimit(4...8)
                 } header: {
-                    Text("Where & Notes")
+                    Text("Where & Activity")
+                } footer: {
+                    Text("Describe what members should bring, prepare, or know about. Supports links: [text](url)")
+                        .font(.caption)
                 }
 
                 // MARK: Theme (only shown for theme-mode months)

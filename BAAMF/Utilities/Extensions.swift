@@ -4,6 +4,19 @@ import SwiftUI
 // MARK: - Date helpers
 
 extension Date {
+    /// Rounds the minutes component down to the nearest `interval` (e.g. 5).
+    /// Seconds are always zeroed. Used to enforce 5-minute picker granularity.
+    func snappedToMinuteInterval(_ interval: Int) -> Date {
+        guard interval > 1 else { return self }
+        var comps = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute], from: self
+        )
+        let m = comps.minute ?? 0
+        comps.minute  = (m / interval) * interval
+        comps.second  = 0
+        return Calendar.current.date(from: comps) ?? self
+    }
+
     /// "March 2026" style display string for a month document.
     func monthYearDisplay() -> String {
         let f = DateFormatter()
@@ -45,7 +58,10 @@ extension Double {
 extension Notification.Name {
     /// Posted by EditCompletedMonthViewModel after a successful score save,
     /// so any listening VM (e.g. FavoriteBooksViewModel) can refresh.
-    static let scoresDidUpdate = Notification.Name("scoresDidUpdate")
+    static let scoresDidUpdate      = Notification.Name("scoresDidUpdate")
+    /// Posted by HomeViewModel (via UIApplication willEnterForeground) to re-sync
+    /// calendar events regardless of which tab is currently visible.
+    static let appWillEnterForeground = Notification.Name("appWillEnterForeground")
 
     /// Posted by ProfilePictureViewModel after a successful photo upload,
     /// so AuthViewModel reloads the member profile with the new photoURL.

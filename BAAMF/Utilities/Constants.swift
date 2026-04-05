@@ -23,7 +23,7 @@ enum K {
             Bundle.main.object(forInfoDictionaryKey: "GOOGLE_BOOKS_API_KEY") as? String ?? ""
         }()
         static let baseURL = "https://www.googleapis.com/books/v1/volumes"
-        static let maxResults = 10
+        static let maxResults = 20  // Fetches extra so culling doesn't leave too few results
     }
 
     // MARK: - Scoring

@@ -30,21 +30,36 @@ final class HomeViewModel: ObservableObject {
     private var nextMonthListener: ListenerRegistration?
     private var booksListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
+    private var foregroundObserver: NSObjectProtocol?
 
     /// Stored so snapshot callbacks can pass it to CalendarService without
     /// capturing the call-site parameter in long-lived closures.
     private var currentUserId: String = ""
+    /// Observer accounts skip calendar sync entirely.
+    private var isObserver: Bool = false
 
     // MARK: - Lifecycle
 
-    func start(currentUserId: String) {
+    func start(currentUserId: String, isObserver: Bool = false) {
         self.currentUserId = currentUserId
+        self.isObserver = isObserver
         isLoading = true
         let ids = Self.adjacentMonthIds()
         startPreviousMonthListener(monthId: ids.previous)
         startCurrentMonthListener(monthId: ids.current)
         startNextMonthListener(monthId: ids.next)
         startMembersListener()
+
+        // Re-sync calendar events whenever the app comes to the foreground —
+        // handles the case where permission was granted after the initial load,
+        // or an event was manually deleted from the iOS Calendar app.
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: .appWillEnterForeground,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.syncCalendarEvents()
+        }
     }
 
     func stop() {
@@ -53,6 +68,25 @@ final class HomeViewModel: ObservableObject {
         nextMonthListener?.remove()
         booksListener?.remove()
         membersListener?.remove()
+        if let obs = foregroundObserver {
+            NotificationCenter.default.removeObserver(obs)
+            foregroundObserver = nil
+        }
+    }
+
+    /// Re-syncs calendar events for all currently-loaded months using the data
+    /// already in memory — no Firestore round-trip required.
+    ///
+    /// Called when the app returns to the foreground so that events missed due to
+    /// a one-time permission denial, a manually-deleted calendar entry, or a
+    /// recently-granted permission are recovered without waiting for a Firestore
+    /// document change to trigger the listener path.
+    func syncCalendarEvents() {
+        guard !isObserver, !currentUserId.isEmpty else { return }
+        let uid = currentUserId
+        for month in [previousMonth, currentMonth, nextMonth].compactMap({ $0 }) {
+            Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
+        }
     }
 
     deinit {
@@ -98,7 +132,7 @@ final class HomeViewModel: ObservableObject {
                     // Only surface it if it's not yet complete — complete months
                     // leave home when the calendar rolls over.
                     self.previousMonth = (month?.status != .complete) ? month : nil
-                    if let month {
+                    if let month, !self.isObserver {
                         let uid = self.currentUserId
                         Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
                     }
@@ -120,7 +154,7 @@ final class HomeViewModel: ObservableObject {
                     if self.currentMonth != nil {
                         self.startBooksListener(monthId: monthId)
                     }
-                    if let month = self.currentMonth {
+                    if let month = self.currentMonth, !self.isObserver {
                         let uid = self.currentUserId
                         Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
                     }
@@ -134,7 +168,7 @@ final class HomeViewModel: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.nextMonth = try? snapshot?.data(as: ClubMonth.self)
-                    if let month = self.nextMonth {
+                    if let month = self.nextMonth, !self.isObserver {
                         let uid = self.currentUserId
                         Task { await CalendarService.shared.syncEvent(for: month, uid: uid) }
                     }

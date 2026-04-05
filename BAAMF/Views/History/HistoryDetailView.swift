@@ -15,6 +15,11 @@ struct HistoryDetailView: View {
     @State private var errorMessage: String?
     @State private var listener: ListenerRegistration?
     @State private var showEditMonth = false
+    @State private var showBookDetail = false
+
+    // Votes in history
+    @State private var votedBooks: [Book] = []
+    @State private var isLoadingVotes = false
 
     private let db = FirestoreService.shared
 
@@ -34,6 +39,10 @@ struct HistoryDetailView: View {
         .navigationTitle(month.month.monthName + " " + String(month.year))
         .navigationBarTitleDisplayMode(.inline)
         .task { startListening() }
+        .task {
+            guard let monthId = month.id else { return }
+            await fetchVotedBooks(monthId: monthId)
+        }
         .onDisappear { listener?.remove() }
         .toolbar {
             if isAdmin {
@@ -67,6 +76,9 @@ struct HistoryDetailView: View {
                 bookCard
                 if hasEventDetails { eventCard }
                 scoresCard
+                if !votedBooks.isEmpty || isLoadingVotes {
+                    votesCard
+                }
                 if let monthId = month.id {
                     AttendanceCard(
                         monthId: monthId,
@@ -83,65 +95,93 @@ struct HistoryDetailView: View {
     // MARK: - Book card
 
     private var bookCard: some View {
-        HStack(alignment: .top, spacing: 16) {
-            if let coverUrl = month.selectedBookCoverUrl {
-                CoverImage(url: coverUrl, size: 100)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 70, height: 100)
-                    .overlay {
-                        Image(systemName: "book.fill")
-                            .foregroundStyle(.secondary)
-                            .font(.title)
-                    }
-            }
+        let canShowDetail = month.selectedBookId != nil && month.id != nil
 
-            VStack(alignment: .leading, spacing: 8) {
-                if let title = month.selectedBookTitle {
-                    Text(title)
-                        .font(.title3.bold())
-                        .lineLimit(4)
-                }
-                if let author = month.selectedBookAuthor {
-                    Text(author)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                if let avg = groupAverage {
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                        Text(avg.scoreDisplay)
-                            .font(.body.bold())
-                        Text("group average")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 2)
+        return Button {
+            if canShowDetail { showBookDetail = true }
+        } label: {
+            HStack(alignment: .top, spacing: 16) {
+                if let coverUrl = month.selectedBookCoverUrl {
+                    CoverImage(url: coverUrl, size: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 70, height: 100)
+                        .overlay {
+                            Image(systemName: "book.fill")
+                                .foregroundStyle(.secondary)
+                                .font(.title)
+                        }
                 }
 
-                if let submitterId = month.selectedBookSubmitterId,
-                   let submitter = allMembers.first(where: { $0.id == submitterId }) {
-                    Text("Submitted by \(submitter.name)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    if let title = month.selectedBookTitle {
+                        Text(title)
+                            .font(.title3.bold())
+                            .lineLimit(4)
+                    }
+                    if let author = month.selectedBookAuthor {
+                        Text(author)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let avg = groupAverage {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(.yellow)
+                            Text(avg.scoreDisplay)
+                                .font(.body.bold())
+                            Text("group average")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         .padding(.top, 2)
+                    }
+
+                    if let submitterId = month.selectedBookSubmitterId,
+                       let submitter = allMembers.first(where: { $0.id == submitterId }) {
+                        Text("Submitted by \(submitter.name)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                    }
+
+                    if month.isHistorical == true {
+                        Label("Historical Entry", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
+
+                    if canShowDetail {
+                        Label("Tap for details", systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                            .padding(.top, 2)
+                    }
                 }
 
-                if month.isHistorical == true {
-                    Label("Historical Entry", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                Spacer()
+
+                if canShowDetail {
+                    Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                         .padding(.top, 4)
                 }
             }
-
-            Spacer()
+            .padding()
+            .cardStyle()
         }
-        .padding()
-        .cardStyle()
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showBookDetail) {
+            BookDetailSheet(
+                monthId: month.id,
+                bookId: month.selectedBookId,
+                allMembers: allMembers
+            )
+        }
     }
 
     // MARK: - Event card
@@ -242,6 +282,87 @@ struct HistoryDetailView: View {
         .cardStyle()
     }
 
+    // MARK: - Votes card
+
+    private var votesCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Votes")
+                .font(.footnote.bold())
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .padding(.horizontal)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+            Divider().padding(.horizontal)
+
+            if isLoadingVotes {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else {
+                // Show R2 books sorted by vote count descending
+                let r2Books = votedBooks
+                    .filter { $0.advancedToR2 }
+                    .sorted { $0.votingR2Voters.count > $1.votingR2Voters.count }
+
+                ForEach(r2Books) { book in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(book.title)
+                                    .font(.subheadline.bold())
+                                    .lineLimit(2)
+                                Text(book.author)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            HStack(spacing: 3) {
+                                Image(systemName: "hand.thumbsup.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(book.id == month.selectedBookId ? .yellow : .secondary)
+                                Text("\(book.votingR2Voters.count)")
+                                    .font(.body.bold())
+                                    .foregroundStyle(book.id == month.selectedBookId ? .primary : .secondary)
+                            }
+                        }
+
+                        // Voter names
+                        let voters = book.votingR2Voters.compactMap { uid in
+                            allMembers.first { $0.id == uid }?.name
+                        }.sorted()
+                        if !voters.isEmpty {
+                            Text(voters.joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("No votes")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+
+                    if book.id != r2Books.last?.id {
+                        Divider().padding(.horizontal)
+                    }
+                }
+
+                if r2Books.isEmpty {
+                    Text("No Round 2 data available")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                }
+            }
+        }
+        .cardStyle()
+    }
+
     // MARK: - Helpers
 
     private struct MemberScoreRow: Identifiable {
@@ -280,6 +401,14 @@ struct HistoryDetailView: View {
                 }
             }
     }
+
+    private func fetchVotedBooks(monthId: String) async {
+        isLoadingVotes = true
+        if let snap = try? await db.booksRef(monthId: monthId).getDocuments() {
+            votedBooks = snap.documents.compactMap { try? $0.data(as: Book.self) }
+        }
+        isLoadingVotes = false
+    }
 }
 
 // MARK: - Attendance card
@@ -293,6 +422,10 @@ private struct AttendanceCard: View {
 
     @StateObject private var vm: AttendanceViewModel
     @State private var showRoster = false
+    /// Stable member order captured once when records first load.
+    /// Sorted initially by attendance status (attended → didn't → no response),
+    /// then alphabetically. Stays frozen so names don't jump while an admin toggles.
+    @State private var frozenOrder: [String]? = nil
 
     init(monthId: String, allMembers: [Member], currentUserId: String, isAdmin: Bool) {
         self.monthId = monthId
@@ -351,7 +484,7 @@ private struct AttendanceCard: View {
                     if isAdmin {
                         adminToggle(for: row)
                     } else {
-                        attendanceLabel(for: row.status)
+                        attendanceLabel(for: row)
                     }
                 }
                 .padding(.horizontal)
@@ -365,6 +498,27 @@ private struct AttendanceCard: View {
         .cardStyle()
         .task { vm.start() }
         .onDisappear { vm.stop() }
+        .onChange(of: vm.isLoading) { _, loading in
+            // Capture order once records are first available; never re-sort after that.
+            guard !loading, frozenOrder == nil else { return }
+            frozenOrder = allMembers
+                .sorted { a, b in
+                    let idA = a.id ?? ""
+                    let idB = b.id ?? ""
+                    let recordA = vm.records.first { $0.id == idA }
+                    let recordB = vm.records.first { $0.id == idB }
+                    // attended (true) → didn't (false) → no response (nil or isMaybe)
+                    func rank(_ r: AttendanceRecord?) -> Int {
+                        guard let r, r.isMaybe != true else { return 2 }
+                        return r.attending ? 0 : 1
+                    }
+                    let rankA = rank(recordA)
+                    let rankB = rank(recordB)
+                    if rankA != rankB { return rankA < rankB }
+                    return a.name < b.name
+                }
+                .compactMap { $0.id }
+        }
         .sheet(isPresented: $showRoster) {
             AttendanceRosterSheet(allMembers: allMembers, records: vm.records)
         }
@@ -375,19 +529,18 @@ private struct AttendanceCard: View {
     @ViewBuilder
     private func adminToggle(for row: MemberAttendanceRow) -> some View {
         HStack(spacing: 6) {
-            attendanceButton(label: "Attended",  value: true,  current: row.status, memberId: row.id)
-            attendanceButton(label: "Didn't",    value: false, current: row.status, memberId: row.id)
+            attendanceButton(label: "Attended", value: true,  current: row.status, isMaybe: false, memberId: row.id)
+            attendanceButton(label: "Didn't",   value: false, current: row.status, isMaybe: false, memberId: row.id)
         }
     }
 
     @ViewBuilder
-    private func attendanceButton(label: String, value: Bool, current: Bool?, memberId: String) -> some View {
-        let isSelected = current == value
+    private func attendanceButton(label: String, value: Bool, current: Bool?, isMaybe: Bool, memberId: String) -> some View {
+        let isSelected = !isMaybe && current == value
         let color: Color = value ? .green : .red
         Button {
             Task {
                 if isSelected {
-                    // Tapping the active selection clears the record
                     await vm.clearAttendance(uid: memberId)
                 } else {
                     await vm.setAttendance(attending: value, uid: memberId)
@@ -396,8 +549,7 @@ private struct AttendanceCard: View {
         } label: {
             Text(label)
                 .font(.caption.bold())
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(isSelected ? color.opacity(0.12) : Color(.systemGray5))
                 .foregroundStyle(isSelected ? color : Color.secondary)
                 .clipShape(Capsule())
@@ -409,8 +561,8 @@ private struct AttendanceCard: View {
     // MARK: - Read-only label (non-admins)
 
     @ViewBuilder
-    private func attendanceLabel(for status: Bool?) -> some View {
-        switch status {
+    private func attendanceLabel(for row: MemberAttendanceRow) -> some View {
+        switch row.status {
         case true:
             Label("Attended", systemImage: "checkmark.circle.fill")
                 .font(.caption.bold())
@@ -432,18 +584,20 @@ private struct AttendanceCard: View {
         let id: String
         let name: String
         let avatarUrl: String?
+        let isMaybe: Bool
         let status: Bool?
     }
 
     private var sortedRows: [MemberAttendanceRow] {
-        allMembers
-            .map { member in
-                let memberId = member.id ?? ""
-                let status = vm.records.first { $0.id == memberId }?.attending
-                return MemberAttendanceRow(id: memberId, name: member.name, avatarUrl: member.photoURL, status: status)
-            }
-            .sorted {
-                return $0.name < $1.name
-            }
+        // Use the frozen order when available so names don't jump while toggling.
+        // Fall back to alphabetical until records load the first time.
+        let orderedIds = frozenOrder ?? allMembers.sorted { $0.name < $1.name }.compactMap { $0.id }
+        return orderedIds.compactMap { id in
+            guard let member = allMembers.first(where: { $0.id == id }) else { return nil }
+            let record = vm.records.first { $0.id == id }
+            // In history, "maybe" is treated as no response — event is past, they either came or didn't.
+            let status: Bool? = (record?.isMaybe == true) ? nil : record?.attending
+            return MemberAttendanceRow(id: id, name: member.name, avatarUrl: member.photoURL, isMaybe: false, status: status)
+        }
     }
 }

@@ -31,6 +31,12 @@ private class AppDelegate: NSObject, UIApplicationDelegate,
         .portrait
     }
 
+    // MARK: Foreground re-entry
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        NotificationCenter.default.post(name: .appWillEnterForeground, object: nil)
+    }
+
     // MARK: APNS token → FCM SDK
 
     /// Pass the raw APNS device token to the FCM SDK so it can exchange it

@@ -43,19 +43,44 @@ final class AttendanceViewModel: ObservableObject {
 
     // MARK: - Derived state
 
-    /// The current user's attendance status, or nil if they haven't responded.
+    /// The current user's yes/no status, or nil if they haven't responded.
+    /// Does not distinguish maybe — use `currentUserIsMaybe` for that.
     func currentUserStatus(uid: String) -> Bool? {
-        records.first { $0.id == uid }?.attending
+        guard let record = records.first(where: { $0.id == uid }) else { return nil }
+        if record.isMaybe == true { return nil }  // maybes aren't a firm yes/no
+        return record.attending
     }
 
-    var attendingCount: Int { records.filter { $0.attending }.count }
-    var notAttendingCount: Int { records.filter { !$0.attending }.count }
+    /// True when the user has an active "maybe" response.
+    func currentUserIsMaybe(uid: String) -> Bool {
+        records.first { $0.id == uid }?.isMaybe == true
+    }
+
+    /// Confirmed attending (excluding maybes).
+    var attendingCount: Int    { records.filter { $0.attending && $0.isMaybe != true }.count }
+    /// Confirmed not attending (excluding maybes).
+    var notAttendingCount: Int { records.filter { !$0.attending && $0.isMaybe != true }.count }
+    var maybeCount: Int        { records.filter { $0.isMaybe == true }.count }
 
     // MARK: - Write
 
     func setAttendance(attending: Bool, uid: String) async {
         let data: [String: Any] = [
             "attending":  attending,
+            "isMaybe":    false,
+            "updatedAt":  Timestamp(date: Date())
+        ]
+        do {
+            try await db.attendanceDocRef(monthId: monthId, uid: uid).setData(data)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setMaybe(uid: String) async {
+        let data: [String: Any] = [
+            "attending":  false,
+            "isMaybe":    true,
             "updatedAt":  Timestamp(date: Date())
         ]
         do {
@@ -69,6 +94,24 @@ final class AttendanceViewModel: ObservableObject {
     func clearAttendance(uid: String) async {
         do {
             try await db.attendanceDocRef(monthId: monthId, uid: uid).delete()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Roll call
+
+    /// Writes a roll call document to Firestore. A Cloud Function listens to this
+    /// collection and sends push notifications to each target uid.
+    func sendRollCall(sentBy: String, targetUids: [String]) async {
+        guard !targetUids.isEmpty else { return }
+        let data: [String: Any] = [
+            "sentAt":     Timestamp(date: Date()),
+            "sentBy":     sentBy,
+            "targetUids": targetUids
+        ]
+        do {
+            try await db.rollCallsRef(monthId: monthId).addDocument(data: data)
         } catch {
             errorMessage = error.localizedDescription
         }

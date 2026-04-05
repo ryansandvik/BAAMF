@@ -69,6 +69,10 @@ final class FirestoreService {
         attendanceRef(monthId: monthId).document(uid)
     }
 
+    func rollCallsRef(monthId: String) -> CollectionReference {
+        monthRef(monthId: monthId).collection("rollCalls")
+    }
+
     func settingsRef() -> DocumentReference {
         db.collection("settings").document("defaults")
     }

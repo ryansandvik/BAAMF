@@ -37,11 +37,13 @@ final class VotingViewModel: ObservableObject {
 
     // MARK: - Round 1 derived state
 
-    /// Eligible books sorted by net R1 votes descending (live tally order).
+    /// Eligible books in stable alphabetical order.
+    /// Sorting by vote count was removed because it caused cards to jump
+    /// as votes were cast, which was confusing for users.
     var r1Books: [Book] {
         books
             .filter { $0.isEligibleForR1 }
-            .sorted { $0.r1NetVotes > $1.r1NetVotes }
+            .sorted { $0.title < $1.title }
     }
 
     /// How many R1 votes the user has cast so far.
@@ -55,11 +57,12 @@ final class VotingViewModel: ObservableObject {
 
     // MARK: - Round 2 derived state
 
-    /// Books that advanced from R1, sorted by R2 votes descending.
+    /// Books that advanced from R1, in stable alphabetical order.
+    /// Sorting by live R2 vote count was removed to prevent cards from jumping.
     var r2Books: [Book] {
         books
             .filter { $0.isEligibleForR2 }
-            .sorted { $0.votingR2Voters.count > $1.votingR2Voters.count }
+            .sorted { $0.title < $1.title }
     }
 
     func r2VotesCast(userId: String) -> Int {

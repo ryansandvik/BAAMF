@@ -39,22 +39,7 @@ struct HostSetupView: View {
             }
 
             // MARK: Event Details (all optional)
-            Section("Event Details (Optional)") {
-                Toggle("Set event date", isOn: $viewModel.hasEventDate.animation())
-                if viewModel.hasEventDate {
-                    DatePicker("Start",
-                               selection: $viewModel.eventDate,
-                               displayedComponents: [.date, .hourAndMinute])
-                    DatePicker("End",
-                               selection: $viewModel.eventEndDate,
-                               in: viewModel.eventDate...,
-                               displayedComponents: [.date, .hourAndMinute])
-                }
-                TextField("Location", text: $viewModel.eventLocation)
-                    .autocorrectionDisabled()
-                TextField("Notes", text: $viewModel.eventNotes, axis: .vertical)
-                    .lineLimit(3, reservesSpace: false)
-            }
+            eventDetailsSection
 
             // MARK: Submission Deadline (not applicable to host pick-4)
             if viewModel.submissionMode != .pick4 {
@@ -111,6 +96,35 @@ struct HostSetupView: View {
                     .background(.regularMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
+        }
+    }
+
+    // Extracted to a separate @ViewBuilder property so the compiler can resolve
+    // the opaque types produced by the conditional DatePicker + onChange block.
+    @ViewBuilder
+    private var eventDetailsSection: some View {
+        Section {
+            Toggle("Set event date", isOn: $viewModel.hasEventDate.animation())
+            if viewModel.hasEventDate {
+                FiveMinuteDatePicker("Start", selection: $viewModel.eventDate)
+                    .onChange(of: viewModel.eventDate) { old, new in
+                        // Drag end date/time by the same delta to preserve event duration.
+                        let delta = new.timeIntervalSince(old)
+                        if delta != 0 {
+                            viewModel.eventEndDate = viewModel.eventEndDate.addingTimeInterval(delta)
+                        }
+                    }
+                FiveMinuteDatePicker("End", selection: $viewModel.eventEndDate)
+            }
+            TextField("Location", text: $viewModel.eventLocation)
+                .autocorrectionDisabled()
+            TextField("Activity description (optional)", text: $viewModel.eventDescription, axis: .vertical)
+                .lineLimit(4, reservesSpace: false)
+        } header: {
+            Text("Event Details (Optional)")
+        } footer: {
+            Text("Describe what members should bring, prepare, or know about. Supports links using markdown: [text](url)")
+                .font(.caption)
         }
     }
 

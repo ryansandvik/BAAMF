@@ -20,6 +20,7 @@ final class FavoriteBooksViewModel: ObservableObject {
     @Published var selectedYear: Int
     @Published private(set) var favorites: [FavoriteEntry] = []
     @Published private(set) var availableYears: [Int] = []
+    @Published private(set) var allMembers: [Member] = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
 
@@ -59,6 +60,10 @@ final class FavoriteBooksViewModel: ObservableObject {
                 completeMonths = snapshot.documents
                     .compactMap { try? $0.data(as: ClubMonth.self) }
                     .sorted { ($0.year, $0.month) > ($1.year, $1.month) }
+
+                // Fetch all members for HistoryDetailView navigation (exclude observers)
+                allMembers = ((try? await db.fetchAllMembers()) ?? [])
+                    .filter { !$0.isObserver && !$0.isVirtual }
 
                 // Derive available years
                 availableYears = Array(Set(completeMonths.map { $0.year })).sorted(by: >)
